@@ -1,11 +1,18 @@
 extern crate getopts;
 
+use std::io;
+use std::fs::File;
 use getopts::Options;
 use std::env;
 
 pub struct CliOptions {
     pub file: Option<String>,
     pub library_type: Option<String>,
+}
+
+pub enum PerfDataReader {
+    Stdin(io::Stdin),
+    File(File),
 }
 
 fn print_usage(program: &str, opts: Options) {
@@ -42,4 +49,16 @@ pub fn parse_args() -> CliOptions {
     };
 
     CliOptions { file, library_type }
+}
+
+
+pub fn get_reader(options: CliOptions) -> PerfDataReader {
+    match options.file {
+        Some(file_name) => {
+            PerfDataReader::File(File::open(file_name).expect("Failed to open the file"))
+        },
+        None => {
+            PerfDataReader::Stdin(io::stdin())
+        }
+    }
 }
