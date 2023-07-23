@@ -52,8 +52,8 @@ pub fn parse_args() -> CliOptions {
 }
 
 
-pub fn get_reader(options: CliOptions) -> PerfDataReader {
-    match options.file {
+pub fn get_reader(options: &CliOptions) -> PerfDataReader {
+    match &options.file {
         Some(file_name) => {
             PerfDataReader::File(File::open(file_name).expect("Failed to open the file"))
         },
