@@ -1,16 +1,15 @@
 mod cli;
-
-use cli::parse_args;
+mod parser;
 
 fn main() {
-    let args = parse_args();
+    let options = cli::parse_args();
+    let reader = cli::get_reader(&options.file);
 
-    match args.file {
-        Some(string) => {
-            println!("The value is: {}", string);
-        },
-        None => {
-            println!("The value is None.");
-        }
-    }
+    let lib_str = &options.library_type.expect("Missing mandatory option -t");
+    let lib = parser::Lib::from_string(lib_str);
+
+    println!("fuuu {:?}", lib);
+    //parser::parse(reader);
+    
+
 }
