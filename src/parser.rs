@@ -6,6 +6,22 @@ use std::cmp::Ordering;
 use std::error::Error;
 use regex::Regex;
 
+macro_rules! add_libs {
+    ($parsers:ident, $(($fn_ptr:ident, $ver:expr)),+ $(,)?) => {
+        $(
+            $parsers.insert(
+                "pytest".to_string(),
+                vec![
+                    Parser {
+                        version: Version::from_str($ver).expect("Bad library version format!"),
+                        parser: $fn_ptr,
+                    },
+                ]
+            );
+        )+
+    };
+}
+
 #[derive(Debug)]
 pub struct Version {
     pub major: u32,
@@ -24,6 +40,7 @@ struct Parser {
     pub parser: fn(&str) -> Result<PerfData, Box<dyn Error>>,
 }
 
+#[derive(Debug)]
 pub struct PerfData {
     pub min: f32,
     pub max: f32,
@@ -91,18 +108,10 @@ impl Lib {
     }
 }
 
-pub fn parse(reader: cli::PerfDataReader, lib: Lib) -> Result<PerfData, Box<dyn Error>> {
+pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<PerfData, Box<dyn Error>> {
     let mut parsers: HashMap<String, Vec<Parser>> = HashMap::new();
 
-    parsers.insert(
-        "pytest".to_string(),
-        vec![
-            Parser {
-                version: Version::from_str("7.3.0").expect("Bad library version format!"),
-                parser: pytest_7_3_0,
-            },
-        ],
-    );
+    add_libs!(parsers, (pytest_7_3_0, "7.3.0"));
 
     // add checks
     let versions = &parsers[&lib.name];
@@ -136,7 +145,6 @@ fn pytest_7_3_0(s: &str) -> Result<PerfData, Box<dyn Error>> {
     println!("Mean: {}", &found["mean"]);
     println!("StdDev: {}", &found["stddev"]);
     println!("Median: {}", &found["median"]);
-    println!("Outliers: {}", &found["outliers"]);
 
     Ok(PerfData {
         min: found["min"].parse()?,
