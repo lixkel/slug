@@ -113,8 +113,12 @@ pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<PerfData, Box<dyn
 
     add_libs!(parsers, (pytest_7_3_0, "7.3.0"));
 
-    // add checks
-    let versions = &parsers[&lib.name];
+    let versions = if parsers.contains_key(&lib.name) {
+        &parsers[&lib.name]
+    } else {
+        return Err("Library not found")?;
+    };
+
     let mut closest: &Parser = &versions[0];
 
     for v in versions {
