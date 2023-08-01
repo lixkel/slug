@@ -1,5 +1,6 @@
 mod cli;
 mod parser;
+mod dbm;
 
 fn main() {
     let options = cli::parse_args();
