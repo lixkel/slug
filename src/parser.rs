@@ -42,6 +42,7 @@ struct Parser {
 
 #[derive(Debug)]
 pub struct PerfData {
+    pub name: String,
     pub min: f32,
     pub max: f32,
 }
@@ -113,11 +114,7 @@ pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<PerfData, Box<dyn
 
     add_libs!(parsers, (pytest_7_3_0, "7.3.0"));
 
-    let versions = if parsers.contains_key(&lib.name) {
-        &parsers[&lib.name]
-    } else {
-        return Err("Library not found")?;
-    };
+    let versions = parsers.get(&lib.name).ok_or("Library not found")?;
 
     let mut closest: &Parser = &versions[0];
 
@@ -139,11 +136,12 @@ pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<PerfData, Box<dyn
 
 fn pytest_7_3_0(s: &str) -> Result<PerfData, Box<dyn Error>> {
     let regex = Regex::new(
-        r"\S+\s+(?P<min>\d+\.\d+)\s+(?P<max>\d+\.\d+)\s+(?P<mean>\d+\.\d+)\s+(?P<stddev>\d+\.\d+)\s+(?P<median>\d+\.\d+)"
+        r"\S+\s+(?P<name>\w+)\s+(?P<min>\d+\.\d+)\s+(?P<max>\d+\.\d+)\s+(?P<mean>\d+\.\d+)\s+(?P<stddev>\d+\.\d+)\s+(?P<median>\d+\.\d+)"
     )?;
 
     let found = regex.captures(s).ok_or("No match found")?;
 
+    println!("Test name: {}", &found["name"]);
     println!("Min: {}", &found["min"]);
     println!("Max: {}", &found["max"]);
     println!("Mean: {}", &found["mean"]);
@@ -151,6 +149,7 @@ fn pytest_7_3_0(s: &str) -> Result<PerfData, Box<dyn Error>> {
     println!("Median: {}", &found["median"]);
 
     Ok(PerfData {
+        name: found["name"].to_string(),
         min: found["min"].parse()?,
         max : found["max"].parse()?,
     })
