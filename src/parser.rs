@@ -40,12 +40,7 @@ struct Parser {
     pub parser: fn(&str) -> Result<PerfData, Box<dyn Error>>,
 }
 
-#[derive(Debug)]
-pub struct PerfData {
-    pub name: String,
-    pub min: f32,
-    pub max: f32,
-}
+pub type PerfData = HashMap<String, f32>;
 
 impl Version {
     pub fn from_str(s: &str) -> Option<Self> {
@@ -141,16 +136,10 @@ fn pytest_7_3_0(s: &str) -> Result<PerfData, Box<dyn Error>> {
 
     let found = regex.captures(s).ok_or("No match found")?;
 
-    println!("Test name: {}", &found["name"]);
-    println!("Min: {}", &found["min"]);
-    println!("Max: {}", &found["max"]);
-    println!("Mean: {}", &found["mean"]);
-    println!("StdDev: {}", &found["stddev"]);
-    println!("Median: {}", &found["median"]);
+    let mut data = PerfData::new();
+    data.insert("name".to_string(), found["name"].parse()?);
+    data.insert("min".to_string(), found["min"].parse()?);
+    data.insert("max".to_string(), found["max"].parse()?);
 
-    Ok(PerfData {
-        name: found["name"].to_string(),
-        min: found["min"].parse()?,
-        max : found["max"].parse()?,
-    })
+    Ok(data)
 }
