@@ -1,6 +1,6 @@
 mod cli;
 mod parser;
-mod dbm;
+mod statistics;
 
 fn main() {
     let options = cli::parse_args();
@@ -9,9 +9,14 @@ fn main() {
     let lib_str = &options.library_type.expect("Missing mandatory option -t");
     let lib = parser::Lib::from_str(lib_str).expect("Library in bad format");
 
-    println!("fuuu {:?}", lib);
-    let data = parser::parse(reader, &lib);
-    println!("{:?}", data);
-    
+    let mut data = match parser::parse(reader, &lib) {
+        Ok(v) => v,
+        Err(e) => panic!("Parsing error: {:?}", e),
+    };
 
+    match statistics::calculate_stats(&mut data) {
+        Ok(_) => {},
+        Err(e) => println!("Error occurred while parsing: {}", e),
+    };
+    println!("{:#?}", data);
 }
