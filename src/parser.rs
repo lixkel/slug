@@ -1,6 +1,6 @@
 use crate::cli;
 
-use std::io::{self, Read, BufReader};
+use std::io::{Read};
 use std::collections::HashMap;
 use std::cmp::Ordering;
 use std::error::Error;
@@ -121,7 +121,7 @@ pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<PerfData, Box<dyn
 
     let mut s = String::new();
 
-    let result = match reader {
+    match reader { // TODO: move this to cli
         cli::PerfDataReader::Stdin(mut r) => r.read_to_string(&mut s)?,
         cli::PerfDataReader::File(mut r) => r.read_to_string(&mut s)?,
     };
@@ -137,9 +137,13 @@ fn pytest_7_3_0(s: &str) -> Result<PerfData, Box<dyn Error>> {
     let found = regex.captures(s).ok_or("No match found")?;
 
     let mut data = PerfData::new();
-    data.insert("name".to_string(), found["name"].parse()?);
+    //data.insert("name".to_string(), found["name"].parse()?);
     data.insert("min".to_string(), found["min"].parse()?);
     data.insert("max".to_string(), found["max"].parse()?);
+    data.insert("mean".to_string(), found["mean"].parse()?);
+    data.insert("stddev".to_string(), found["stddev"].parse()?);
+    data.insert("median".to_string(), found["median"].parse()?);
+
 
     Ok(data)
 }
