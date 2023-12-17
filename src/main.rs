@@ -16,7 +16,7 @@ fn main() {
 
     match statistics::calculate_stats(&mut data) {
         Ok(_) => {},
-        Err(e) => println!("Error occurred while parsing: {}", e),
+        Err(e) => panic!("Error occurred while parsing: {}", e),
     };
     println!("{:#?}", data);
 }

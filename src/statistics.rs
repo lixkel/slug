@@ -20,9 +20,9 @@ pub fn calculate_stats(perf_data: &mut PerfData) -> Result<(), Box<dyn Error>> {
     ];
 
     for calculator in stat_functions {
-        if calculator.required_keys.iter().all(|&key| perf_data.contains_key(key)) {
+        if calculator.required_keys.iter().all(|&key| perf_data.map.contains_key(key)) {
             if let Ok(result) = (calculator.function)(perf_data) {
-                perf_data.insert(calculator.name.to_string(), result);
+                perf_data.map.insert(calculator.name.to_string(), result);
             }
         }
     }
@@ -30,7 +30,7 @@ pub fn calculate_stats(perf_data: &mut PerfData) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn calculate_average(perf_data: &PerfData) -> Result<f32, Box<dyn Error>> {
-    let sum: f32 = perf_data.values().sum();
-    let count = perf_data.len() as f32;
+    let sum: f32 = perf_data.map.values().sum();
+    let count = perf_data.map.len() as f32;
     Ok(sum / count)
 }

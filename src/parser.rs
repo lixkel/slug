@@ -40,7 +40,11 @@ struct Parser {
     pub parser: fn(&str) -> Result<PerfData, Box<dyn Error>>,
 }
 
-pub type PerfData = HashMap<String, f32>;
+#[derive(Debug)]
+pub struct PerfData {
+    pub name: String,
+    pub map: HashMap<String, f32>, // I think this could be rewritten to something like "&'a str"
+}
 
 impl Version {
     pub fn from_str(s: &str) -> Option<Self> {
@@ -114,7 +118,7 @@ pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<PerfData, Box<dyn
     let mut closest: &Parser = &versions[0];
 
     for v in versions {
-        if closest.version < v.version && v.version < lib.version {
+        if closest.version > v.version && v.version <= lib.version {
             closest = v;
         }
     }
@@ -136,13 +140,16 @@ fn pytest_7_3_0(s: &str) -> Result<PerfData, Box<dyn Error>> {
 
     let found = regex.captures(s).ok_or("No match found")?;
 
-    let mut data = PerfData::new();
-    //data.insert("name".to_string(), found["name"].parse()?);
-    data.insert("min".to_string(), found["min"].parse()?);
-    data.insert("max".to_string(), found["max"].parse()?);
-    data.insert("mean".to_string(), found["mean"].parse()?);
-    data.insert("stddev".to_string(), found["stddev"].parse()?);
-    data.insert("median".to_string(), found["median"].parse()?);
+    let mut data = PerfData {
+        name: found["name"].to_string(),
+        map: HashMap::new(),
+    };
+
+    data.map.insert("min".to_string(), found["min"].parse()?);
+    data.map.insert("max".to_string(), found["max"].parse()?);
+    data.map.insert("mean".to_string(), found["mean"].parse()?);
+    data.map.insert("stddev".to_string(), found["stddev"].parse()?);
+    data.map.insert("median".to_string(), found["median"].parse()?);
 
 
     Ok(data)
