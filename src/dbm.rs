@@ -15,18 +15,18 @@ pub fn insert(data: &PerfData) -> Result<(), Box<dyn Error>> {
 fn insert_conn(conn: &mut Connection, data: &PerfData) -> Result<(), Box<dyn Error>> {
     // Create SQL statement to create a table with dynamic columns
     let columns = data.map.keys()
-                          .map(|key| format!("{} REAL", key))
-                          .collect::<Vec<String>>()
-                          .join(", ");
+        .map(|key| format!("{} REAL", key))
+        .collect::<Vec<String>>()
+        .join(", ");
     let create_table_stmt = format!("CREATE TABLE IF NOT EXISTS {} ({})", data.name, columns);
     conn.execute(&create_table_stmt, ())?;
 
     // Prepare the INSERT statement with dynamic columns
     let keys = data.map.keys().map(|key| key.as_str()).collect::<Vec<&str>>().join(", ");
     let placeholders = data.map.keys().enumerate()
-                            .map(|(i, _)| format!("?{}", i + 1))
-                            .collect::<Vec<String>>()
-                            .join(", ");
+        .map(|(i, _)| format!("?{}", i + 1))
+        .collect::<Vec<String>>()
+        .join(", ");
 
     let insert_stmt = format!("INSERT INTO perf_data ({}) VALUES ({})", keys, placeholders);
 
@@ -37,4 +37,3 @@ fn insert_conn(conn: &mut Connection, data: &PerfData) -> Result<(), Box<dyn Err
 
     Ok(())
 }
-

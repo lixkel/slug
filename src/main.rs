@@ -1,6 +1,7 @@
 mod cli;
 mod parser;
 mod statistics;
+mod dbm;
 
 fn main() {
     let options = cli::parse_args();
@@ -18,5 +19,8 @@ fn main() {
         Ok(_) => {},
         Err(e) => panic!("Error occurred while parsing: {}", e),
     };
+
     println!("{:#?}", data);
+
+    dbm::insert(&data);
 }
