@@ -7,13 +7,20 @@ use std::error::Error;
 
 
 impl PerfData {
-    fn from_row(rows: Rows, name: String) -> Result<PerfData, Box<dyn Error>> {
-        let data = PerfData {
+    fn from_row(mut rows: Rows, name: String, columns: &Vec<&str>) -> Result<PerfData, Box<dyn Error>> {
+        let mut data = PerfData {
             name: name,
             map: HashMap::new(),
         };
 
-        
+        let Some(row) = rows.next()? else { return Err("No rows found".into()); };
+
+        let mut i = 0;
+        for column in columns {
+            let value: f32 = row.get(i)?;
+            data.map.insert(column.to_string(), value);
+            i += 1;
+        }
 
         Ok(data)
     }
@@ -66,5 +73,5 @@ fn get_latest(conn: &mut Connection, data: &PerfData) -> Result<PerfData, Box<dy
     let mut stmt = conn.prepare(&read_stmt)?;
     let mut row = stmt.query([])?;
 
-    PerfData::from_row(row, data.name.clone())
+    PerfData::from_row(row, data.name.clone(), &keys)
 }
