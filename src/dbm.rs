@@ -30,12 +30,13 @@ fn get_conn() -> Result<Connection, Box<dyn Error>> {
     Ok(Connection::open("slug.db")?)
 }
 
-pub fn insert(data: &PerfData) -> Result<(), Box<dyn Error>> {
+pub fn insert(data: &PerfData) -> Result<Connection, Box<dyn Error>> {
     let mut conn = get_conn()?;
-    insert_conn(&mut conn, data)
+    insert_conn(&mut conn, data)?;
+    Ok(conn)
 }
 
-fn insert_conn(conn: &mut Connection, data: &PerfData) -> Result<(), Box<dyn Error>> {
+pub fn insert_conn(conn: &mut Connection, data: &PerfData) -> Result<(), Box<dyn Error>> {
     // Create SQL statement to create a table with dynamic columns
     let columns = data.map.keys()
         .map(|key| format!("{} REAL", key))
@@ -51,7 +52,7 @@ fn insert_conn(conn: &mut Connection, data: &PerfData) -> Result<(), Box<dyn Err
         .collect::<Vec<String>>()
         .join(", ");
 
-    let insert_stmt = format!("INSERT INTO perf_data ({}) VALUES ({})", keys, placeholders);
+    let insert_stmt = format!("INSERT INTO {} ({}) VALUES ({})", data.name, keys, placeholders);
 
     // Prepare values for the INSERT statement
     let values: Vec<&dyn rusqlite::ToSql> = data.map.values().map(|v| v as &dyn rusqlite::ToSql).collect();
@@ -61,14 +62,14 @@ fn insert_conn(conn: &mut Connection, data: &PerfData) -> Result<(), Box<dyn Err
     Ok(())
 }
 
-fn get_latest(conn: &mut Connection, data: &PerfData) -> Result<PerfData, Box<dyn Error>> {
+pub fn get_latest(conn: &mut Connection, data: &PerfData) -> Result<PerfData, Box<dyn Error>> {
     let keys = data.map.keys()
         .map(|key| key.as_str())
         .collect::<Vec<&str>>();
 
     let keys_str = keys.join(", ");
 
-    let read_stmt = format!("SELECT {} FROM {} ORDER BY id DESC LIMIT 1;", keys_str, data.name);
+    let read_stmt = format!("SELECT {} FROM {} ORDER BY ROWID DESC LIMIT 1;", keys_str, data.name);
 
     let mut stmt = conn.prepare(&read_stmt)?;
     let mut row = stmt.query([])?;

@@ -22,5 +22,7 @@ fn main() {
 
     println!("{:#?}", data);
 
-    dbm::insert(&data);
+    let mut conn = dbm::insert(&data).unwrap();
+    let ldata = dbm::get_latest(&mut conn, &data).unwrap();
+    println!("{:#?}", ldata);
 }
