@@ -7,22 +7,25 @@ use std::error::Error;
 
 
 impl PerfData {
-    fn from_row(mut rows: Rows, name: String, columns: &Vec<&str>) -> Result<PerfData, Box<dyn Error>> {
-        let mut data = PerfData {
-            name: name,
-            map: HashMap::new(),
-        };
+    fn from_rows(mut rows: Rows, name: String, columns: &Vec<&str>) -> Result<Vec<PerfData>, Box<dyn Error>> {
+        let mut vec: Vec<PerfData> = Vec::new();
+        
+        while let Some(row) = rows.next()? {
+            let mut data = PerfData {
+                name: name.clone(),
+                map: HashMap::new(),
+            };
 
-        let Some(row) = rows.next()? else { return Err("No rows found".into()); };
-
-        let mut i = 0;
-        for column in columns {
-            let value: f32 = row.get(i)?;
-            data.map.insert(column.to_string(), value);
-            i += 1;
+            let mut i = 0;
+            for column in columns {
+                let value: f32 = row.get(i)?;
+                data.map.insert(column.to_string(), value);
+                i += 1;
+            }
+            vec.push(data);
         }
 
-        Ok(data)
+        Ok(vec)
     }
 }
 
@@ -62,17 +65,17 @@ pub fn insert_conn(conn: &mut Connection, data: &PerfData) -> Result<(), Box<dyn
     Ok(())
 }
 
-pub fn get_latest(conn: &mut Connection, data: &PerfData) -> Result<PerfData, Box<dyn Error>> {
+pub fn get_latest_n(conn: &mut Connection, data: &PerfData, n: i32) -> Result<Vec<PerfData>, Box<dyn Error>> {
     let keys = data.map.keys()
         .map(|key| key.as_str())
         .collect::<Vec<&str>>();
 
     let keys_str = keys.join(", ");
 
-    let read_stmt = format!("SELECT {} FROM {} ORDER BY ROWID DESC LIMIT 1;", keys_str, data.name);
+    let read_stmt = format!("SELECT {} FROM {} ORDER BY ROWID DESC LIMIT {};", keys_str, data.name, n);
 
     let mut stmt = conn.prepare(&read_stmt)?;
-    let mut row = stmt.query([])?;
+    let mut rows = stmt.query([])?;
 
-    PerfData::from_row(row, data.name.clone(), &keys)
+    PerfData::from_rows(rows, data.name.clone(), &keys)
 }
