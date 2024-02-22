@@ -34,3 +34,44 @@ pub fn calculate_average(perf_data: &PerfData) -> Result<f64, Box<dyn Error>> {
     let count = perf_data.map.len() as f64;
     Ok(sum / count)
 }
+
+
+//exponential weighted moving average
+pub fn ewma_calc(values: &Vec<PerfData>, alpha: f64) -> Vec<f64> {
+    let mut averages = Vec::new();
+
+    let mut previous_average = match values.last() {
+        Some(val) => val.map["average"],
+        None => return averages, // If empty
+    };
+
+    averages.push(previous_average);
+
+    for value in values.iter().rev() {
+        let current_average = alpha * value.map["average"] + (1.0 - alpha) * previous_average;
+        averages.push(current_average);
+        previous_average = current_average;
+    }
+
+    averages
+}
+
+//exponential weighted moving average
+pub fn ewma(values: &Vec<PerfData>, alpha: f64) {
+    let avg = ewma_calc(&values, alpha);
+
+    if avg.len() <= 1 {
+        println!("Too few samples for exponential moving average");
+        return;
+    }
+    
+    let len = avg.len();
+    let change = (avg[len-1]-avg[len-2])/avg[len-2];
+
+    if change < 0.2 {
+        println!("All within norm in exponential moving average");
+        return;
+    }
+
+    println!("Significant performance degradation");
+}

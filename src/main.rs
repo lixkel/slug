@@ -20,9 +20,11 @@ fn main() {
         Err(e) => panic!("Error occurred while parsing: {}", e),
     };
 
-    println!("{:#?}", data);
+    //println!("{:#?}", data);
 
     let mut conn = dbm::insert(&data).unwrap();
     let ldata = dbm::get_latest_n(&mut conn, &data, 3).unwrap();
-    println!("{:#?}", ldata[0]);
+    //println!("{:#?}", ldata[0]);
+
+    statistics::ewma(&ldata, 0.2);
 }
