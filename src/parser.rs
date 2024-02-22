@@ -43,7 +43,7 @@ struct Parser {
 #[derive(Debug)]
 pub struct PerfData {
     pub name: String,
-    pub map: HashMap<String, f32>, // I think this could be rewritten to something like "&'a str"
+    pub map: HashMap<String, f64>, // I think this could be rewritten to something like "&'a str"
 }
 
 impl Version {

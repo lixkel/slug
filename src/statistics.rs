@@ -2,7 +2,7 @@ use crate::parser::PerfData;
 
 use std::error::Error;
 
-type StatFunction = fn(&PerfData) -> Result<f32, Box<dyn Error>>;
+type StatFunction = fn(&PerfData) -> Result<f64, Box<dyn Error>>;
 
 struct StatCalculator {
     name: &'static str,
@@ -29,8 +29,8 @@ pub fn calculate_stats(perf_data: &mut PerfData) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn calculate_average(perf_data: &PerfData) -> Result<f32, Box<dyn Error>> {
-    let sum: f32 = perf_data.map.values().sum();
-    let count = perf_data.map.len() as f32;
+pub fn calculate_average(perf_data: &PerfData) -> Result<f64, Box<dyn Error>> {
+    let sum: f64 = perf_data.map.values().sum();
+    let count = perf_data.map.len() as f64;
     Ok(sum / count)
 }

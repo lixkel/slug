@@ -18,7 +18,7 @@ impl PerfData {
 
             let mut i = 0;
             for column in columns {
-                let value: f32 = row.get(i)?;
+                let value: f64 = row.get(i)?;
                 data.map.insert(column.to_string(), value);
                 i += 1;
             }
