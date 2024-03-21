@@ -1,7 +1,7 @@
 mod cli;
 mod parser;
 mod statistics;
-mod dbm;
+mod dbm_csv;
 
 fn main() {
     let options = cli::parse_args();
@@ -20,11 +20,11 @@ fn main() {
         Err(e) => panic!("Error occurred while parsing: {}", e),
     };
 
-    //println!("{:#?}", data);
+    println!("{:#?}", data);
 
-    let mut conn = dbm::insert(&data).unwrap();
-    let ldata = dbm::get_latest_n(&mut conn, &data, 3).unwrap();
-    //println!("{:#?}", ldata[0]);
+    dbm_csv::insert(&data).unwrap();
+    let ldata = dbm_csv::get_latest_n(&data.name, 3).unwrap();
+    println!("{:#?}", ldata[0]);
 
     statistics::ewma(&ldata, 0.2);
 }
