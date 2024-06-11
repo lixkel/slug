@@ -41,14 +41,14 @@ pub fn ewma_calc(values: &Vec<PerfData>, alpha: f64) -> Vec<f64> {
     let mut averages = Vec::new();
 
     let mut previous_average = match values.last() {
-        Some(val) => val.map["average"],
+        Some(val) => val.map["mean"],
         None => return averages, // If empty
     };
 
     averages.push(previous_average);
 
     for value in values.iter().rev() {
-        let current_average = alpha * value.map["average"] + (1.0 - alpha) * previous_average;
+        let current_average = alpha * value.map["mean"] + (1.0 - alpha) * previous_average;
         averages.push(current_average);
         previous_average = current_average;
     }
