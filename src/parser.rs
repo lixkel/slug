@@ -1,4 +1,5 @@
 use crate::cli;
+use crate::git;
 
 use std::io::{Read};
 use std::collections::HashMap;
@@ -43,6 +44,7 @@ struct Parser {
 #[derive(Debug)]
 pub struct PerfData {
     pub name: String,
+    pub commit_hash: String,
     pub map: HashMap<String, f64>, // I think this could be rewritten to something like "&'a str"
 }
 
@@ -130,7 +132,9 @@ pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<PerfData, Box<dyn
         cli::PerfDataReader::File(mut r) => r.read_to_string(&mut s)?,
     };
 
-    (closest.parser)(&s)
+    let mut data = (closest.parser)(&s)?;
+    data.commit_hash = git::get_commit_hash()?;
+    Ok(data)
 }
 
 fn pytest_7_3_0(s: &str) -> Result<PerfData, Box<dyn Error>> {
@@ -142,6 +146,7 @@ fn pytest_7_3_0(s: &str) -> Result<PerfData, Box<dyn Error>> {
 
     let mut data = PerfData {
         name: found["name"].to_string(),
+        commit_hash: String::new(),
         map: HashMap::new(),
     };
 

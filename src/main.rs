@@ -1,4 +1,5 @@
 mod cli;
+mod git;
 mod parser;
 mod statistics;
 mod dbm_csv;
