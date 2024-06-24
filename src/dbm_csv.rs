@@ -1,4 +1,5 @@
 use crate::parser::PerfData;
+use crate::git;
 
 use std::fs::{OpenOptions, File, create_dir_all};
 use std::io::{Write, BufWriter, BufReader};
@@ -44,6 +45,8 @@ pub fn insert(data: &PerfData) -> Result<(), Box<dyn Error>> {
     writer.write_record(&values)?;
 
     writer.flush()?;
+
+    git::amend_slug()?;
     Ok(())
 }
 
