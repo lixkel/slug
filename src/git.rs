@@ -47,3 +47,20 @@ pub fn amend_slug() -> Result<(), Box<dyn Error>> {
     
     Ok(())
 }
+
+pub fn branch_exists(repo: &Repository, branch_name: &str) -> Result<bool, Box<dyn Error>> {
+    match repo.find_branch(branch_name, BranchType::Local) {
+        Ok(_) => Ok(true),
+        Err(ref e) if e.code() == git2::ErrorCode::NotFound => Ok(false),
+        Err(e) => Err(Box::new(e)),
+    }
+}
+
+pub fn create_branch(repo: &Repository, branch_name: &str) -> Result<(), Box<dyn Error>> {
+    let head = repo.head().map_err(|e| format!("Failed to get HEAD: {}", e))?;
+    let commit = head.peel_to_commit().map_err(|e| format!("Failed to peel to commit: {}", e))?;
+    
+    repo.branch(branch_name, &commit, false).map_err(|e| format!("Failed to create branch: {}", e))?;
+    
+    Ok(())
+}
