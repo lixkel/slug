@@ -3,6 +3,8 @@ use git2::Repository;
 use std::path::Path;
 use std::fs;
 
+
+// TODO: create custom errors finally
 fn add_all_in_dir(index: &mut git2::Index, dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
@@ -49,7 +51,7 @@ pub fn amend_slug() -> Result<(), Box<dyn Error>> {
 }
 
 pub fn branch_exists(repo: &Repository, branch_name: &str) -> Result<bool, Box<dyn Error>> {
-    match repo.find_branch(branch_name, BranchType::Local) {
+    match repo.find_branch(branch_name, git2::BranchType::Local) {
         Ok(_) => Ok(true),
         Err(ref e) if e.code() == git2::ErrorCode::NotFound => Ok(false),
         Err(e) => Err(Box::new(e)),
@@ -62,5 +64,13 @@ pub fn create_branch(repo: &Repository, branch_name: &str) -> Result<(), Box<dyn
     
     repo.branch(branch_name, &commit, false).map_err(|e| format!("Failed to create branch: {}", e))?;
     
+    Ok(())
+}
+
+pub fn ensure_branch_exists(repo: &Repository, branch_name: &str) -> Result<(), Box<dyn Error>> {
+    let repo = Repository::discover(".").map_err(|e| format!("Failed to discover repository: {}", e))?;
+    if !branch_exists(&repo, branch_name)? {
+        create_branch(&repo, branch_name)?;
+    }
     Ok(())
 }
