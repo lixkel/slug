@@ -68,9 +68,25 @@ pub fn create_branch(repo: &Repository, branch_name: &str) -> Result<(), Box<dyn
 }
 
 pub fn ensure_branch_exists(repo: &Repository, branch_name: &str) -> Result<(), Box<dyn Error>> {
-    let repo = Repository::discover(".").map_err(|e| format!("Failed to discover repository: {}", e))?;
-    if !branch_exists(&repo, branch_name)? {
-        create_branch(&repo, branch_name)?;
+    if !branch_exists(repo, branch_name)? {
+        create_branch(repo, branch_name)?;
     }
     Ok(())
+}
+
+pub fn checkout_branch(branch_name: &str) -> Result<(), Box<dyn StdError>> {
+    let repo = Repository::discover(".").map_err(|e| format!("Failed to discover repository: {}", e))?;
+    ensure_branch_exists(&repo, branch_name)?;
+    
+    repo.set_head(&format!("refs/heads/{}", branch_name)).map_err(|e| format!("Failed to set HEAD: {}", e))?;
+    repo.checkout_head(Some(git2::build::CheckoutBuilder::default().force())).map_err(|e| format!("Failed to checkout branch: {}", e))?;
+    
+    Ok(())
+}
+
+pub fn get_cur_branch() -> Result<String, Box<dyn StdError>> {
+    let repo = Repository::discover(".")?;
+    
+    let head = repo.head()?;
+    head.shorthand().ok_or_else(|| "HEAD is not pointing to a branch".into())
 }
