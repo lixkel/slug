@@ -2,10 +2,6 @@ use crate::parser::PerfData;
 use crate::git;
 use crate::dbm_csv;
 
-
-use std::fs::{OpenOptions, File, create_dir_all};
-use std::io::{Write, BufWriter, BufReader};
-use std::collections::HashMap;
 use std::error::Error;
 
 
@@ -16,7 +12,7 @@ pub fn insert(data: &PerfData) -> Result<(), Box<dyn Error>> {
 
     git::checkout_branch(&slug_branch)?;
 
-    dbm_csv::insert(&data)?;
+    dbm_csv::insert(data)?;
     git::commit_data(&cur_commit)?;
 
     git::checkout_branch(&origin_branch)?;

@@ -1,11 +1,10 @@
 use crate::parser::PerfData;
-use crate::git;
 
 use std::fs::{OpenOptions, File, create_dir_all};
-use std::io::{Write, BufWriter, BufReader};
+use std::io::{BufWriter, BufReader};
 use std::collections::HashMap;
 use std::error::Error;
-use csv::{Writer, Reader, ReaderBuilder};
+use csv::{Writer, ReaderBuilder};
 
 
 pub fn insert(data: &PerfData) -> Result<(), Box<dyn Error>> {
@@ -46,7 +45,6 @@ pub fn insert(data: &PerfData) -> Result<(), Box<dyn Error>> {
 
     writer.flush()?;
 
-    git::amend_slug()?;
     Ok(())
 }
 

@@ -4,8 +4,11 @@ mod parser;
 mod statistics;
 mod dbm_csv;
 mod dbm_git;
+mod dbm_amend;
 
-fn main() {
+use std::error::Error;
+
+fn main() -> Result<(), Box<dyn Error>> {
     let options = cli::parse_args();
     let reader = cli::get_reader(&options.file);
 
@@ -24,9 +27,18 @@ fn main() {
 
     println!("{:#?}", data);
 
-    dbm_csv::insert(&data).unwrap();
-    let ldata = dbm_csv::get_latest_n(&data.name, 3).unwrap();
+    let ldata;
+
+    if options.amend {
+        dbm_amend::insert(&data)?;
+        ldata = dbm_amend::get_latest_n(&data.name, 3)?;
+    } else {
+        dbm_git::insert(&data)?;
+        ldata = dbm_git::get_latest_n(&data.name, 3)?;
+    }
     println!("{:#?}", ldata[0]);
 
     statistics::ewma(&ldata, 0.2);
+
+    Ok(())
 }

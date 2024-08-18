@@ -8,6 +8,7 @@ use std::env;
 pub struct CliOptions {
     pub file: Option<String>,
     pub library_type: Option<String>,
+    pub amend: bool,
 }
 
 pub enum PerfDataReader {
@@ -27,6 +28,7 @@ pub fn parse_args() -> CliOptions {
     let mut opts = Options::new();
     opts.optopt("f", "file", "set input file name", "FILENAME");
     opts.optopt("t", "type", "set library type", "LIBRARY");
+    opts.optflag("a", "amend", "store records in current branch using commit amend");
     opts.optflag("h", "help", "print this help menu");
 
     let matches = match opts.parse(&args[1..]) {
@@ -41,6 +43,7 @@ pub fn parse_args() -> CliOptions {
 
     let file = matches.opt_str("f");
     let library_type = matches.opt_str("t");
+    let amend = matches.opt_present("a");
 
     if library_type.is_none() {
         println!("Missing mandatory option -t");
@@ -48,7 +51,11 @@ pub fn parse_args() -> CliOptions {
         std::process::exit(1);
     };
 
-    CliOptions { file, library_type }
+    CliOptions {
+        file,
+        library_type,
+        amend,
+    }
 }
 
 
