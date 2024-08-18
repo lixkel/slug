@@ -3,6 +3,7 @@ mod git;
 mod parser;
 mod statistics;
 mod dbm_csv;
+mod dbm_git;
 
 fn main() {
     let options = cli::parse_args();
