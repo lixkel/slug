@@ -9,6 +9,7 @@ pub struct CliOptions {
     pub file: Option<String>,
     pub library_type: Option<String>,
     pub amend: bool,
+    pub subcommand: Option<String>,
 }
 
 pub enum PerfDataReader {
@@ -24,6 +25,14 @@ fn print_usage(program: &str, opts: Options) {
 pub fn parse_args() -> CliOptions {
     let args: Vec<String> = env::args().collect();
     let program = args[0].clone();
+
+    let subcommand = if args.len() > 1 {
+        let subcommand = args[1].clone();
+        match subcommand.as_str() {
+            "setup" => Some(subcommand),
+            _ => None,
+        }
+    } else { None };
 
     let mut opts = Options::new();
     opts.optopt("f", "file", "set input file name", "FILENAME");
@@ -45,7 +54,7 @@ pub fn parse_args() -> CliOptions {
     let library_type = matches.opt_str("t");
     let amend = matches.opt_present("a");
 
-    if library_type.is_none() {
+    if library_type.is_none() && subcommand.is_none() {
         println!("Missing mandatory option -t");
         print_usage(&program, opts);
         std::process::exit(1);
@@ -55,6 +64,7 @@ pub fn parse_args() -> CliOptions {
         file,
         library_type,
         amend,
+        subcommand,
     }
 }
 

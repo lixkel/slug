@@ -5,11 +5,21 @@ mod statistics;
 mod dbm_csv;
 mod dbm_git;
 mod dbm_amend;
+mod setup;
 
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let options = cli::parse_args();
+
+    match options.subcommand.as_deref() {
+        Some("setup") => {
+            setup::setup()?;
+            return Ok(())
+        }
+        _ => {}
+    }
+
     let reader = cli::get_reader(&options.file);
 
     let lib_str = &options.library_type.expect("Missing mandatory option -t");

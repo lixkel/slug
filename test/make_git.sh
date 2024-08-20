@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -euo pipefail
+
 INPUT_FILE="pytest-7.3.0-template"
 OUTPUT_FILE="pytest-7.3.0-template-tmp"
 
@@ -45,11 +47,11 @@ create_commits() {
     local num_commits=$1
     local file_name=$2
 
-    git checkout -b $branch
+    cur_branch=$(git branch --show-current)
     for i in $(seq 1 $num_commits); do
-        echo "Commit $i on branch $branch" >> "$FILE_NAME"
+        echo "Commit $i on branch $cur_branch" >> "$FILE_NAME"
         git add "$FILE_NAME"
-        git commit -m "Commit $i on branch $branch"
+        git commit -m "Commit $i on branch $cur_branch"
         fake_test
         cargo run -- -f "$OUTPUT_FILE" -t pytest-7.3.0
     done
@@ -71,6 +73,8 @@ mkdir "$DIR_NAME"
 cd "$DIR_NAME"
 
 git init
+
+cargo run -- setup
 
 # Create an init file and init commit
 FILE_NAME="file.txt"

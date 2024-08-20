@@ -1,8 +1,13 @@
 use std::error::Error;
 use git2;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::fs;
 
+
+pub fn get_path() -> Result<PathBuf, Box<dyn Error>> {
+    let repo = git2::Repository::discover(".").map_err(|e| format!("Failed to discover git2::Repository: {}", e))?;
+    Ok(repo.path().parent().expect("Parent path should always exist").to_path_buf())
+}
 
 // TODO: create custom errors finally
 fn add_all_in_dir(index: &mut git2::Index, dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
