@@ -1,5 +1,8 @@
 debug/
 target/
-Cargo.lock
+
 .vscode
+
+Cargo.lock
 *.db
+*.patch
