@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         Err(e) => panic!("Error occurred while parsing: {}", e),
     };
 
-    println!("{:#?}", data);
+    //println!("{:#?}", data);
 
     let ldata;
 
@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         dbm_git::insert(&data)?;
         ldata = dbm_git::get_latest_n(&data.name, 3)?;
     }
-    println!("{:#?}", ldata[0]);
+    //println!("{:#?}", ldata);
 
     statistics::ewma(&ldata, 0.2);
 

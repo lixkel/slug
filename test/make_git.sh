@@ -33,7 +33,7 @@ fake_test() {
 
     MIN=$(echo "$MIN + 1" | bc)
     MAX=$(echo "$MAX + 1" | bc)
-    MEAN=$(echo "$MEAN + 1" | bc)
+    MEAN=$(echo "$MEAN + 100" | bc)
     STDDEV=$(echo "$STDDEV + 0.1" | bc)
     MEDIAN=$(echo "$MEDIAN + 1" | bc)
     IQR=$(echo "$IQR + 0.5" | bc)
@@ -53,7 +53,7 @@ create_commits() {
         git add "$FILE_NAME"
         git commit -m "Commit $i on branch $cur_branch"
         fake_test
-        cargo run -- -f "$OUTPUT_FILE" -t pytest-7.3.0
+        ../../target/release/slug -f "$OUTPUT_FILE" -t pytest-7.3.0
     done
 }
 
@@ -69,12 +69,15 @@ create_branch_commits() {
 
 DIR_NAME="new_git_repo"
 
+if [ -d "$DIR_NAME" ]; then
+  rm -rf "$DIR_NAME"
+fi
+
 mkdir "$DIR_NAME"
 cd "$DIR_NAME"
 
 git init
 
-cargo run -- setup
 
 # Create an init file and init commit
 FILE_NAME="file.txt"
