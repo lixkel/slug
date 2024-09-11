@@ -38,7 +38,7 @@ pub struct Lib {
 
 struct Parser {
     pub version: Version,
-    pub parser: fn(&str) -> Result<PerfData, Box<dyn Error>>,
+    pub parser: fn(&str) -> Result<Vec<PerfData>, Box<dyn Error>>,
 }
 
 #[derive(Debug)]
@@ -110,10 +110,12 @@ impl Lib {
     }
 }
 
-pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<PerfData, Box<dyn Error>> {
+// TODO: add list parsers
+pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<Vec<PerfData>, Box<dyn Error>> {
     let mut parsers: HashMap<String, Vec<Parser>> = HashMap::new();
 
     add_libs!(parsers, (pytest_7_3_0, "7.3.0"));
+    add_libs!(parsers, (pyperf_2_7_0, "2.7.0"));
 
     let versions = parsers.get(&lib.name).ok_or("Library not found")?;
 
@@ -133,29 +135,62 @@ pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<PerfData, Box<dyn
     };
 
     let mut data = (closest.parser)(&s)?;
-    data.commit_hash = git::get_commit_hash()?;
     Ok(data)
 }
 
-fn pytest_7_3_0(s: &str) -> Result<PerfData, Box<dyn Error>> {
+fn pytest_7_3_0(s: &str) -> Result<Vec<PerfData>, Box<dyn Error>> {
     let regex = Regex::new(
         r"\S+\s+(?P<name>\w+)\s+(?P<min>\d+\.\d+)\s+(?P<max>\d+\.\d+)\s+(?P<mean>\d+\.\d+)\s+(?P<stddev>\d+\.\d+)\s+(?P<median>\d+\.\d+)"
     )?;
 
-    let found = regex.captures(s).ok_or("No match found")?;
+    let mut results = Vec::new();
+    
+    for caps in regex.captures_iter(s) {
+        let mut data = PerfData {
+            name: caps["name"].to_string(),
+            commit_hash: git::get_commit_hash()?,
+            map: HashMap::new(),
+        };
 
-    let mut data = PerfData {
-        name: found["name"].to_string(),
-        commit_hash: String::new(),
-        map: HashMap::new(),
-    };
+        data.map.insert("min".to_string(), caps["min"].parse()?);
+        data.map.insert("max".to_string(), caps["max"].parse()?);
+        data.map.insert("mean".to_string(), caps["mean"].parse()?);
+        data.map.insert("stddev".to_string(), caps["stddev"].parse()?);
+        data.map.insert("median".to_string(), caps["median"].parse()?);
+        
+        results.push(data);
+    }
+    
+    if results.is_empty() {
+        return Err(From::from("No matches found"));
+    }
+    
+    Ok(results)
+}
 
-    data.map.insert("min".to_string(), found["min"].parse()?);
-    data.map.insert("max".to_string(), found["max"].parse()?);
-    data.map.insert("mean".to_string(), found["mean"].parse()?);
-    data.map.insert("stddev".to_string(), found["stddev"].parse()?);
-    data.map.insert("median".to_string(), found["median"].parse()?);
+fn pyperf_2_7_0(s: &str) -> Result<Vec<PerfData>, Box<dyn Error>> {
+    let regex = Regex::new(
+        r"(?P<name>\w+): Mean \+- std dev: (?P<mean>\d+\.?\d*) ms \+- (?P<stddev>\d+\.?\d*) (?P<unit>\w+)"
+    )?;
 
+    let mut results = Vec::new();
 
-    Ok(data)
+    for found in regex.captures_iter(s) {
+        let mut data = PerfData {
+            name: found["name"].to_string(),
+            commit_hash: git::get_commit_hash()?,
+            map: HashMap::new(),
+        };
+
+        data.map.insert("mean".to_string(), found["mean"].parse()?);
+        data.map.insert("stddev".to_string(), found["stddev"].parse()?);
+
+        results.push(data);
+    }
+
+    if results.is_empty() {
+        return Err("No matches found".into());
+    }
+
+    Ok(results)
 }

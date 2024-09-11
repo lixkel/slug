@@ -5,7 +5,7 @@ use crate::dbm_csv;
 use std::error::Error;
 
 
-pub fn insert(data: &PerfData) -> Result<(), Box<dyn Error>> {
+pub fn insert(data: &Vec<PerfData>) -> Result<(), Box<dyn Error>> {
     dbm_csv::insert(data)?;
     git::amend_slug()?;
     Ok(())

@@ -7,7 +7,14 @@ use std::error::Error;
 use csv::{Writer, ReaderBuilder};
 
 
-pub fn insert(data: &PerfData) -> Result<(), Box<dyn Error>> {
+pub fn insert(data: &Vec<PerfData>) -> Result<(), Box<dyn Error>> {
+    for entry in data.iter() {
+        insert_entry(entry)?;
+    }
+    Ok(())
+}
+
+pub fn insert_entry(data: &PerfData) -> Result<(), Box<dyn Error>> {
     let folder_path = ".slug";
     create_dir_all(folder_path)?;
 

@@ -25,15 +25,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     let lib_str = &options.library_type.expect("Missing mandatory option -t");
     let lib = parser::Lib::from_str(lib_str).expect("Library in bad format");
 
+    // TODO: look at error handling
     let mut data = match parser::parse(reader, &lib) {
         Ok(v) => v,
         Err(e) => panic!("Parsing error: {:?}", e),
     };
 
-    match statistics::calculate_stats(&mut data) {
+    /*
+        match statistics::calculate_stats(&mut data) {
         Ok(_) => {},
         Err(e) => panic!("Error occurred while parsing: {}", e),
     };
+    */
 
     //println!("{:#?}", data);
 
@@ -41,10 +44,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     if options.amend {
         dbm_amend::insert(&data)?;
-        ldata = dbm_amend::get_latest_n(&data.name, 3)?;
+        ldata = dbm_amend::get_latest_n(&data[0].name, 3)?;
     } else {
         dbm_git::insert(&data)?;
-        ldata = dbm_git::get_latest_n(&data.name, 3)?;
+        ldata = dbm_git::get_latest_n(&data[0].name, 3)?;
     }
     //println!("{:#?}", ldata);
 
