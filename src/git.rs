@@ -56,6 +56,7 @@ pub fn amend_slug() -> Result<(), Box<dyn Error>> {
 }
 
 pub fn branch_exists(repo: &git2::Repository, branch_name: &str) -> Result<bool, Box<dyn Error>> {
+    println!("branch_name = {:?}", branch_name);
     match repo.find_branch(branch_name, git2::BranchType::Local) {
         Ok(_) => Ok(true),
         Err(ref e) if e.code() == git2::ErrorCode::NotFound => Ok(false),
@@ -63,7 +64,9 @@ pub fn branch_exists(repo: &git2::Repository, branch_name: &str) -> Result<bool,
     }
 }
 
+// TODO: make this a clear branch creation function
 pub fn create_branch(repo: &git2::Repository, branch_name: &str) -> Result<(), Box<dyn Error>> {
+    println!("branch_name = {:?}", branch_name);
     let head = repo.head().map_err(|e| format!("Failed to get HEAD: {}", e))?;
     let commit = head.peel_to_commit().map_err(|e| format!("Failed to peel to commit: {}", e))?;
     
@@ -73,6 +76,7 @@ pub fn create_branch(repo: &git2::Repository, branch_name: &str) -> Result<(), B
 }
 
 pub fn ensure_branch_exists(repo: &git2::Repository, branch_name: &str) -> Result<(), Box<dyn Error>> {
+    println!("branch_name = {:?}", branch_name);
     if !branch_exists(repo, branch_name)? {
         create_branch(repo, branch_name)?;
     }
@@ -80,6 +84,7 @@ pub fn ensure_branch_exists(repo: &git2::Repository, branch_name: &str) -> Resul
 }
 
 pub fn checkout_branch(branch_name: &str) -> Result<(), Box<dyn Error>> {
+    println!("branch_name = {:?}", branch_name);
     let repo = git2::Repository::discover(".").map_err(|e| format!("Failed to discover git2::Repository: {}", e))?;
     ensure_branch_exists(&repo, branch_name)?;
     

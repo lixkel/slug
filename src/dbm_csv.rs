@@ -6,6 +6,8 @@ use std::collections::HashMap;
 use std::error::Error;
 use csv::{Writer, ReaderBuilder};
 
+use crate::git;
+
 
 pub fn insert(data: &Vec<PerfData>) -> Result<(), Box<dyn Error>> {
     for entry in data.iter() {
@@ -15,6 +17,8 @@ pub fn insert(data: &Vec<PerfData>) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn insert_entry(data: &PerfData) -> Result<(), Box<dyn Error>> {
+    let path = git::get_path()?;
+    //println!("path = {:?}", path);
     let folder_path = ".slug";
     create_dir_all(folder_path)?;
 

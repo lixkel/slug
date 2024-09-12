@@ -14,17 +14,20 @@ pub fn insert(data: &Vec<PerfData>) -> Result<(), Box<dyn Error>> {
     git::checkout_branch(&slug_branch)?;
 
     dbm_csv::insert(data)?;
+    //println!("\n\n\nCOMMIT\n\n\n");
     git::commit_data(&cur_commit)?;
 
+    //println!("\n\n\nCHECKOUT\n\n\n");
     git::checkout_branch(&origin_branch)?;
 
+    //println!("\n\n\nEND\n\n\n");
     Ok(())
 }
 
 
 pub fn get_latest_n(name: &String, n: usize) -> Result<Vec<PerfData>, Box<dyn Error>> {
     let origin_branch = git::get_cur_branch()?;
-    let slug_branch = "slug-".to_string() + &origin_branch;
+    let slug_branch = "slug".to_string();
 
     git::checkout_branch(&slug_branch)?;
 
