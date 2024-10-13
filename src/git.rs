@@ -129,3 +129,36 @@ pub fn commit_data(commit_msg: &str) -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
+
+
+pub fn edit_branch_slug(test_name: &str, test_data: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let repo = git2::Repository::discover(".").map_err(|e| format!("Failed to discover git2::Repository: {}", e))?;
+    ensure_branch_exists(&repo, "slug")?;
+
+    let branch_ref = format!("refs/heads/slug");
+    let mut branch = repo.find_reference(&branch_ref)?;
+    let branch_commit = branch.peel_to_commit()?;
+
+
+    // Prepare a TreeBuilder and write test_data to the test_name file
+    let tree = branch_commit.tree()?;
+    let mut tree_builder = repo.treebuilder(Some(&tree))?;
+    let content_oid = repo.blob(test_data.as_bytes())?;
+    tree_builder.insert(test_name, content_oid, 0o100644)?;
+    let updated_tree_oid = tree_builder.write()?;
+
+    // Create a new commit on this updated tree and use the parent commit
+    let sig = git2::Signature::now("Slug", "slug@slug.internal")?;
+    let updated_tree = repo.find_tree(updated_tree_oid)?;
+
+    repo.commit(
+        Some(&branch_ref),
+        &sig,
+        &sig,
+        &format!("Updating {} on slug", test_name),
+        &updated_tree,
+        &[&branch_commit],
+    )?;
+
+    Ok(())
+}
