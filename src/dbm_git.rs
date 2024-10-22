@@ -1,40 +1,32 @@
 use crate::parser::PerfData;
 use crate::git;
+use crate::git::SlugGit;
 use crate::dbm_csv;
+use csv::Writer;
+use std::io::{BufWriter, BufReader, Cursor};
 
 use std::error::Error;
 
 
 // TODO: dont checkout just write directly the data to branch
-pub fn insert(data: &Vec<PerfData>) -> Result<(), Box<dyn Error>> {
-    let origin_branch = git::get_cur_branch()?;
-    let slug_branch = "slug".to_string();
-    let cur_commit = git::get_commit_hash()?;
+pub fn insert(slug_git: &SlugGit, data: &Vec<PerfData>) -> Result<(), Box<dyn Error>> {
+    for entry in data.iter() {
+        let mut csv_buffer = Vec::new();
+        let mut writer = Writer::from_writer(Cursor::new(&mut csv_buffer));
+        dbm_csv::get_data_entry_string(writer, entry, slug_git.file_exists(&entry.name)?)?;
 
-    git::checkout_branch(&slug_branch)?;
+        let csv_string = String::from_utf8(csv_buffer)?;
+        slug_git.edit_branch_slug(&entry.name, &csv_string)?;
+    }
 
-    dbm_csv::insert(data)?;
-    //println!("\n\n\nCOMMIT\n\n\n");
-    git::commit_data(&cur_commit)?;
-
-    //println!("\n\n\nCHECKOUT\n\n\n");
-    git::checkout_branch(&origin_branch)?;
-
-    //println!("\n\n\nEND\n\n\n");
     Ok(())
 }
 
 
-pub fn get_latest_n(name: &String, n: usize) -> Result<Vec<PerfData>, Box<dyn Error>> {
-    let origin_branch = git::get_cur_branch()?;
-    let slug_branch = "slug".to_string();
-
-    git::checkout_branch(&slug_branch)?;
+pub fn get_latest_n(slug_git: &SlugGit, name: &String, n: usize) -> Result<Vec<PerfData>, Box<dyn Error>> {
+    let cursor = Cursor::new(slug_git.read_file_slug(&name)?);
+    let reader = BufReader::new(cursor);
 
     // TODO: think about if i should not only get one data point from each checkout
-    let latest_n = dbm_csv::get_latest_n(name, n)?;
-
-    git::checkout_branch(&origin_branch)?;
-
-    Ok(latest_n)
+    dbm_csv::get_latest_n(reader, name, n)
 }

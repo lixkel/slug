@@ -1,43 +1,21 @@
 use crate::parser::PerfData;
 
 use std::fs::{OpenOptions, File, create_dir_all};
-use std::io::{BufWriter, BufReader};
+use std::io::{BufWriter, BufReader, Cursor};
 use std::collections::HashMap;
 use std::error::Error;
 use csv::{Writer, ReaderBuilder};
 
 use crate::git;
+use crate::git::SlugGit;
+use std::io::Read;
 
 
-pub fn insert(data: &Vec<PerfData>) -> Result<(), Box<dyn Error>> {
-    for entry in data.iter() {
-        insert_entry(entry)?;
-    }
-    Ok(())
-}
-
-pub fn insert_entry(data: &PerfData) -> Result<(), Box<dyn Error>> {
-    let path = git::get_path()?;
-    //println!("path = {:?}", path);
-    let folder_path = ".slug";
-    create_dir_all(folder_path)?;
-
-    let file_path = format!("{}/{}.csv", folder_path, data.name);
-    
-    let file_exists = std::path::Path::new(&file_path).exists();
-    
-    let file = OpenOptions::new()
-        .write(true)
-        .append(true)
-        .create(true)
-        .open(&file_path)?;
-    let mut writer = Writer::from_writer(BufWriter::new(file));
-
+pub fn get_data_entry_string<W: std::io::Write>(mut writer: Writer<W>, data: &PerfData, file_exists: bool) -> Result<(), Box<dyn Error>> {
     // Sort keys
-    // TODO: add mechanism to handle possible new keys
     let mut keys: Vec<&String> = data.map.keys().collect();
     keys.sort_unstable();
-
+    
     // TODO: make this a PerfData function
     let mut values = keys
         .iter()
@@ -52,19 +30,16 @@ pub fn insert_entry(data: &PerfData) -> Result<(), Box<dyn Error>> {
     if !file_exists {
         writer.write_record(&keys)?;
     }
-    writer.write_record(&values)?;
 
+    // Write records to writer
+    writer.write_record(&values)?;
     writer.flush()?;
 
     Ok(())
 }
 
 
-pub fn get_latest_n(name: &String, n: usize) -> Result<Vec<PerfData>, Box<dyn Error>> {
-    let folder_path = ".slug";
-    let file_path = format!("{}/{}.csv", folder_path, name);
-    let file = File::open(file_path)?;
-    let reader = BufReader::new(file);
+pub fn get_latest_n<R: Read>(reader: BufReader<R>, name: &String, n: usize)  -> Result<Vec<PerfData>, Box<dyn Error>> {
     let mut csv_reader = ReaderBuilder::new()
         .has_headers(true)
         .from_reader(reader);
