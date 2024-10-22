@@ -5,20 +5,12 @@ mod statistics;
 mod dbm_csv;
 mod dbm_git;
 mod dbm_amend;
-mod setup;
 
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let options = cli::parse_args();
 
-    match options.subcommand.as_deref() {
-        Some("setup") => {
-            setup::setup()?;
-            return Ok(())
-        }
-        _ => {}
-    }
 
     let reader = cli::get_reader(&options.file);
 
@@ -41,13 +33,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     //println!("{:#?}", data);
 
     let ldata;
+    let mut slug_git = git::SlugGit::new()?;
 
     if options.amend {
-        dbm_amend::insert(&data)?;
+        dbm_amend::insert(&slug_git, &data)?;
         ldata = dbm_amend::get_latest_n(&data[0].name, 3)?;
     } else {
-        dbm_git::insert(&data)?;
-        ldata = dbm_git::get_latest_n(&data[0].name, 3)?;
+        dbm_git::insert(&slug_git, &data)?;
+        ldata = dbm_git::get_latest_n(&slug_git, &data[0].name, 3)?;
     }
     //println!("{:#?}", ldata);
 
