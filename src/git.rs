@@ -48,8 +48,15 @@ impl SlugGit {
     pub fn create_branch(&self, branch_name: &str) -> Result<(), Box<dyn Error>> {
         let head = self.repo.head().map_err(|e| format!("Failed to get HEAD: {}", e))?;
         let commit = head.peel_to_commit().map_err(|e| format!("Failed to peel to commit: {}", e))?;
+
+        let first_commit = commit.parents().nth_back(0);
+
+        let first_commit = match first_commit {
+            Some(ancestor) => ancestor,
+            None => commit,
+        };
         
-        self.repo.branch(branch_name, &commit, false).map_err(|e| format!("Failed to create branch: {}", e))?;
+        self.repo.branch(branch_name, &first_commit, false).map_err(|e| format!("Failed to create branch: {}", e))?;
         
         Ok(())
     }
