@@ -5,11 +5,10 @@ use csv::Writer;
 use crate::git;
 use crate::git::SlugGit;
 use crate::dbm_csv;
+use crate::errors::SlugError;
 
-use std::error::Error;
 
-
-pub fn insert(slug_git: &SlugGit, data: &Vec<PerfData>) -> Result<(), Box<dyn Error>> {
+pub fn insert(slug_git: &SlugGit, data: &Vec<PerfData>) -> Result<(), SlugError> {
     for entry in data.iter() {
         let folder_path = ".slug";
         create_dir_all(folder_path)?;
@@ -33,7 +32,7 @@ pub fn insert(slug_git: &SlugGit, data: &Vec<PerfData>) -> Result<(), Box<dyn Er
 }
 
 
-pub fn get_latest_n(name: &String, n: usize) -> Result<Vec<PerfData>, Box<dyn Error>> {
+pub fn get_latest_n(name: &String, n: usize) -> Result<Vec<PerfData>, SlugError> {
     let folder_path = ".slug";
     let file_path = format!("{}/{}.csv", folder_path, name);
     let file = File::open(file_path)?;

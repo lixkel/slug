@@ -1,8 +1,7 @@
 use crate::parser::PerfData;
+use crate::errors::SlugError;
 
-use std::error::Error;
-
-type StatFunction = fn(&PerfData) -> Result<f64, Box<dyn Error>>;
+type StatFunction = fn(&PerfData) -> Result<f64, SlugError>;
 
 struct StatCalculator {
     name: &'static str,
@@ -10,7 +9,7 @@ struct StatCalculator {
     required_keys: Vec<&'static str>,
 }
 
-pub fn calculate_stats(perf_data: &mut PerfData) -> Result<(), Box<dyn Error>> {
+pub fn calculate_stats(perf_data: &mut PerfData) -> Result<(), SlugError> {
     let stat_functions = vec![
         StatCalculator {
             name: "average",
@@ -29,7 +28,7 @@ pub fn calculate_stats(perf_data: &mut PerfData) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn calculate_average(perf_data: &PerfData) -> Result<f64, Box<dyn Error>> {
+pub fn calculate_average(perf_data: &PerfData) -> Result<f64, SlugError> {
     let sum: f64 = perf_data.map.values().sum();
     let count = perf_data.map.len() as f64;
     Ok(sum / count)

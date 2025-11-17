@@ -4,6 +4,7 @@ use std::io;
 use std::fs::File;
 use getopts::Options;
 use std::env;
+use crate::errors::SlugError;
 
 pub struct CliOptions {
     pub file: Option<String>,
@@ -22,7 +23,7 @@ fn print_usage(program: &str, opts: Options) {
     print!("{}", opts.usage(&brief));
 }
 
-pub fn parse_args() -> CliOptions {
+pub fn parse_args() -> Result<CliOptions, SlugError> {
     let args: Vec<String> = env::args().collect();
     let program = args[0].clone();
 
@@ -40,10 +41,7 @@ pub fn parse_args() -> CliOptions {
     opts.optflag("a", "amend", "store records in current branch using commit amend");
     opts.optflag("h", "help", "print this help menu");
 
-    let matches = match opts.parse(&args[1..]) {
-        Ok(m) => { m }
-        Err(f) => { panic!("{}", f.to_string()) }
-    };
+    let matches = opts.parse(&args[1..])?;
 
     if matches.opt_present("h") {
         print_usage(&program, opts);
@@ -55,27 +53,27 @@ pub fn parse_args() -> CliOptions {
     let amend = matches.opt_present("a");
 
     if library_type.is_none() && subcommand.is_none() {
-        println!("Missing mandatory option -t");
         print_usage(&program, opts);
-        std::process::exit(1);
+        return Err(SlugError::Cli("Missing mandatory option -t".to_string()));
     };
 
-    CliOptions {
+    Ok(CliOptions {
         file,
         library_type,
         amend,
         subcommand,
-    }
+    })
 }
 
 
-pub fn get_reader(file: &Option<String>) -> PerfDataReader {
+pub fn get_reader(file: &Option<String>) -> Result<PerfDataReader, SlugError> {
     match &file {
         Some(file_name) => {
-            PerfDataReader::File(File::open(file_name).expect("Failed to open the file"))
+            let file = File::open(file_name)?;
+            Ok(PerfDataReader::File(file))
         },
         None => {
-            PerfDataReader::Stdin(io::stdin())
+            Ok(PerfDataReader::Stdin(io::stdin()))
         }
     }
 }

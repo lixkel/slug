@@ -4,18 +4,17 @@ use crate::git::SlugGit;
 use crate::dbm_csv;
 use csv::Writer;
 use std::io::{BufWriter, BufReader, Cursor};
-
-use std::error::Error;
+use crate::errors::SlugError;
 
 
 // TODO: dont checkout just write directly the data to branch
-pub fn insert(slug_git: &SlugGit, data: &Vec<PerfData>) -> Result<(), Box<dyn Error>> {
+pub fn insert(slug_git: &SlugGit, data: &Vec<PerfData>) -> Result<(), SlugError> {
     for entry in data.iter() {
         let mut csv_buffer = Vec::new();
         let mut writer = Writer::from_writer(Cursor::new(&mut csv_buffer));
         dbm_csv::get_data_entry_string(writer, entry, slug_git.file_exists(&entry.name)?)?;
 
-        let csv_string = String::from_utf8(csv_buffer)?;
+        let csv_string = String::from_utf8(csv_buffer).map_err(|e| SlugError::Parsing(e.to_string()))?;
         slug_git.edit_branch_slug(&entry.name, &csv_string)?;
     }
 
@@ -23,7 +22,7 @@ pub fn insert(slug_git: &SlugGit, data: &Vec<PerfData>) -> Result<(), Box<dyn Er
 }
 
 
-pub fn get_latest_n(slug_git: &SlugGit, name: &String, n: usize) -> Result<Vec<PerfData>, Box<dyn Error>> {
+pub fn get_latest_n(slug_git: &SlugGit, name: &String, n: usize) -> Result<Vec<PerfData>, SlugError> {
     let cursor = Cursor::new(slug_git.read_file_slug(&name)?);
     let reader = BufReader::new(cursor);
 

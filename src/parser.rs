@@ -1,10 +1,10 @@
 use crate::cli;
 use crate::git;
+use crate::errors::SlugError;
 
 use std::io::{Read};
 use std::collections::HashMap;
 use std::cmp::Ordering;
-use std::error::Error;
 use regex::Regex;
 
 macro_rules! add_libs {
@@ -40,7 +40,7 @@ pub struct Lib {
 
 struct Parser {
     pub version: Version,
-    pub parser: fn(&str) -> Result<Vec<PerfData>, Box<dyn Error>>,
+    pub parser: fn(&str) -> Result<Vec<PerfData>, SlugError>,
 }
 
 #[derive(Debug)]
@@ -113,7 +113,7 @@ impl Lib {
 }
 
 // TODO: add list parsers
-pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<Vec<PerfData>, Box<dyn Error>> {
+pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<Vec<PerfData>, SlugError> {
     let mut parsers: HashMap<String, Vec<Parser>> = HashMap::new();
 
     add_libs!(parsers, {
@@ -121,7 +121,7 @@ pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<Vec<PerfData>, Bo
         "pyperf" => [(pyperf_2_7_0, "2.7.0")]
     });
 
-    let versions = parsers.get(&lib.name).ok_or("Library not found")?;
+    let versions = parsers.get(&lib.name).ok_or_else(|| SlugError::Parsing("Library not found".to_string()))?;
 
     let mut closest: &Parser = &versions[0];
 
@@ -138,11 +138,11 @@ pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<Vec<PerfData>, Bo
         cli::PerfDataReader::File(mut r) => r.read_to_string(&mut s)?,
     };
 
-    let mut data = (closest.parser)(&s)?;
+    let data = (closest.parser)(&s)?;
     Ok(data)
 }
 
-fn pytest_7_3_0(s: &str) -> Result<Vec<PerfData>, Box<dyn Error>> {
+fn pytest_7_3_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
     let regex = Regex::new(
         r"\S+\s+(?P<name>\w+)\s+(?P<min>\d+\.\d+)\s+(?P<max>\d+\.\d+)\s+(?P<mean>\d+\.\d+)\s+(?P<stddev>\d+\.\d+)\s+(?P<median>\d+\.\d+)"
     )?;
@@ -166,13 +166,13 @@ fn pytest_7_3_0(s: &str) -> Result<Vec<PerfData>, Box<dyn Error>> {
     }
     
     if results.is_empty() {
-        return Err(From::from("No matches found"));
+        return Err(SlugError::Parsing("No matches found".to_string()));
     }
     
     Ok(results)
 }
 
-fn pyperf_2_7_0(s: &str) -> Result<Vec<PerfData>, Box<dyn Error>> {
+fn pyperf_2_7_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
     let regex = Regex::new(
         r"(?P<name>\w+): Mean \+- std dev: (?P<mean>\d+\.?\d*) ms \+- (?P<stddev>\d+\.?\d*) (?P<unit>\w+)"
     )?;
@@ -193,7 +193,7 @@ fn pyperf_2_7_0(s: &str) -> Result<Vec<PerfData>, Box<dyn Error>> {
     }
 
     if results.is_empty() {
-        return Err("No matches found".into());
+        return Err(SlugError::Parsing("No matches found".to_string()));
     }
 
     Ok(results)

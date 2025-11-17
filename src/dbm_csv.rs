@@ -3,15 +3,15 @@ use crate::parser::PerfData;
 use std::fs::{OpenOptions, File, create_dir_all};
 use std::io::{BufWriter, BufReader, Cursor};
 use std::collections::HashMap;
-use std::error::Error;
 use csv::{Writer, ReaderBuilder};
+use crate::errors::SlugError;
 
 use crate::git;
 use crate::git::SlugGit;
 use std::io::Read;
 
 
-pub fn get_data_entry_string<W: std::io::Write>(mut writer: Writer<W>, data: &PerfData, file_exists: bool) -> Result<(), Box<dyn Error>> {
+pub fn get_data_entry_string<W: std::io::Write>(mut writer: Writer<W>, data: &PerfData, file_exists: bool) -> Result<(), SlugError> {
     // Sort keys
     let mut keys: Vec<&String> = data.map.keys().collect();
     keys.sort_unstable();
@@ -39,7 +39,7 @@ pub fn get_data_entry_string<W: std::io::Write>(mut writer: Writer<W>, data: &Pe
 }
 
 
-pub fn get_latest_n<R: Read>(reader: BufReader<R>, name: &String, n: usize)  -> Result<Vec<PerfData>, Box<dyn Error>> {
+pub fn get_latest_n<R: Read>(reader: BufReader<R>, name: &String, n: usize)  -> Result<Vec<PerfData>, SlugError> {
     let mut csv_reader = ReaderBuilder::new()
         .has_headers(true)
         .from_reader(reader);

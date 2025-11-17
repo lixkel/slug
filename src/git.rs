@@ -1,7 +1,7 @@
-use std::error::Error;
 use git2;
 use std::path::{Path, PathBuf};
 use std::fs;
+use crate::errors::SlugError;
 
 
 pub struct SlugGit {
@@ -11,8 +11,8 @@ pub struct SlugGit {
 
 
 impl SlugGit {
-    pub fn new() -> Result<Self, Box<dyn Error>> {
-        let repo = git2::Repository::discover(".").map_err(|e| format!("Failed to discover git repository: {}", e))?;
+    pub fn new() -> Result<Self, SlugError> {
+        let repo = git2::Repository::discover(".")?;
 
         let instance = Self {
             repo: repo,
@@ -24,30 +24,30 @@ impl SlugGit {
     }
 
 
-    pub fn get_path(&self) -> Result<PathBuf, Box<dyn Error>> {
+    pub fn get_path(&self) -> Result<PathBuf, SlugError> {
         Ok(self.repo.path().parent().expect("Parent path should always exist").to_path_buf())
     }
 
 
-    pub fn get_commit_hash(&self) -> Result<String, Box<dyn Error>> {
-        let head = self.repo.head().map_err(|e| format!("Failed to get HEAD: {}", e))?;
-        let commit = head.peel_to_commit().map_err(|e| format!("Failed to peel to commit: {}", e))?;
+    pub fn get_commit_hash(&self) -> Result<String, SlugError> {
+        let head = self.repo.head()?;
+        let commit = head.peel_to_commit()?;
         Ok(commit.id().to_string())
     }
 
 
-    pub fn branch_exists(&self, branch_name: &str) -> Result<bool, Box<dyn Error>> {
+    pub fn branch_exists(&self, branch_name: &str) -> Result<bool, SlugError> {
         match self.repo.find_branch(branch_name, git2::BranchType::Local) {
             Ok(_) => Ok(true),
             Err(ref e) if e.code() == git2::ErrorCode::NotFound => Ok(false),
-            Err(e) => Err(Box::new(e)),
+            Err(e) => Err(e.into()),
         }
     }
 
 
-    pub fn create_branch(&self, branch_name: &str) -> Result<(), Box<dyn Error>> {
-        let head = self.repo.head().map_err(|e| format!("Failed to get HEAD: {}", e))?;
-        let commit = head.peel_to_commit().map_err(|e| format!("Failed to peel to commit: {}", e))?;
+    pub fn create_branch(&self, branch_name: &str) -> Result<(), SlugError> {
+        let head = self.repo.head()?;
+        let commit = head.peel_to_commit()?;
 
         let first_commit = commit.parents().nth_back(0);
 
@@ -56,13 +56,13 @@ impl SlugGit {
             None => commit,
         };
         
-        self.repo.branch(branch_name, &first_commit, false).map_err(|e| format!("Failed to create branch: {}", e))?;
+        self.repo.branch(branch_name, &first_commit, false)?;
         
         Ok(())
     }
 
 
-    pub fn ensure_branch_exists(&self, branch_name: &str) -> Result<(), Box<dyn Error>> {
+    pub fn ensure_branch_exists(&self, branch_name: &str) -> Result<(), SlugError> {
         if !self.branch_exists(branch_name)? {
             self.create_branch(branch_name)?;
         }
@@ -70,13 +70,15 @@ impl SlugGit {
     }
 
 
-    pub fn get_cur_branch(&self) -> Result<String, Box<dyn Error>> {        
+    pub fn get_cur_branch(&self) -> Result<String, SlugError> {        
         let head = self.repo.head()?;
-        head.shorthand().map(String::from).ok_or_else(|| "HEAD is not pointing to a branch".into())
+        head.shorthand()
+            .map(String::from)
+            .ok_or_else(|| SlugError::Git(git2::Error::from_str("HEAD is not pointing to a branch")))
     }
 
 
-    pub fn edit_branch_slug(&self, test_name: &String, test_data: &String) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn edit_branch_slug(&self, test_name: &String, test_data: &String) -> Result<(), SlugError> {
         let branch_ref = format!("refs/heads/slug");
         let mut branch = self.repo.find_reference(&branch_ref)?;
         let branch_commit = branch.peel_to_commit()?;
@@ -89,9 +91,10 @@ impl SlugGit {
         let mut current_content = String::new();
         if self.file_exists(test_name)? {
             // Get the current content of the file
-            let entry = tree.get_name(test_name).ok_or("File not found in tree")?;
+            let entry = tree.get_name(test_name).ok_or_else(|| SlugError::Git(git2::Error::from_str("File not found in tree")))?;
             let blob = self.repo.find_blob(entry.id())?;
-            current_content = String::from_utf8(blob.content().to_vec())?;
+            current_content = String::from_utf8(blob.content().to_vec())
+                .map_err(|e| SlugError::Parsing(e.to_string()))?;
         }
 
         // Append new data to the existing content
@@ -118,22 +121,19 @@ impl SlugGit {
     }
 
 
-    pub fn read_file_slug(&self, file_path: &String) -> Result<Vec<u8>, Box<dyn Error>> {
+    pub fn read_file_slug(&self, file_path: &String) -> Result<Vec<u8>, SlugError> {
         let mut branch = self.repo.find_reference(&self.slug_branch_ref)?;
         let branch_commit = branch.peel_to_commit()?;
         let tree = branch_commit.tree()?;
 
         // Get the current content of the file
-        let entry = tree.get_name(file_path).ok_or("File not found in tree")?;
+        let entry = tree.get_name(file_path).ok_or_else(|| SlugError::Git(git2::Error::from_str("File not found in tree")))?;
         let blob = self.repo.find_blob(entry.id())?;
         Ok(blob.content().to_vec())
-        //let current_content = String::from_utf8(blob.content().to_vec())?;
-
-        //Ok(current_content)
     }
 
 
-    pub fn file_exists(&self, file_path: &String) -> Result<bool, Box<dyn Error>> {    
+    pub fn file_exists(&self, file_path: &String) -> Result<bool, SlugError> {    
         let branch_ref = format!("refs/heads/slug");
         let mut branch = self.repo.find_reference(&branch_ref)?;
         let branch_commit = branch.peel_to_commit()?;
@@ -147,7 +147,7 @@ impl SlugGit {
     }
 
 
-    fn add_all_in_dir(index: &mut git2::Index, dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    fn add_all_in_dir(index: &mut git2::Index, dir: &Path) -> Result<(), SlugError> {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
@@ -161,18 +161,17 @@ impl SlugGit {
     }
     
 
-    pub fn amend_slug(&self) -> Result<(), Box<dyn Error>> {
-        let repo = git2::Repository::discover(".").map_err(|e| format!("Failed to discover git2::Repository: {}", e))?;
-        let head = self.repo.head().map_err(|e| format!("Failed to get HEAD: {}", e))?;
-        let commit = head.peel_to_commit().map_err(|e| format!("Failed to peel to commit: {}", e))?;
+    pub fn amend_slug(&self) -> Result<(), SlugError> {
+        let head = self.repo.head()?;
+        let commit = head.peel_to_commit()?;
         
-        let mut index = self.repo.index().map_err(|e| format!("Failed to get index: {}", e))?;
+        let mut index = self.repo.index()?;
         let slug_path = Path::new(".slug");
         Self::add_all_in_dir(&mut index, slug_path)?;
-        index.write().map_err(|e| format!("Failed to write index: {}", e))?;
+        index.write()?;
         
-        let tree_id = index.write_tree().map_err(|e| format!("Failed to write tree: {}", e))?;
-        let tree = self.repo.find_tree(tree_id).map_err(|e| format!("Failed to find tree: {}", e))?;
+        let tree_id = index.write_tree()?;
+        let tree = self.repo.find_tree(tree_id)?;
     
         commit.amend(
             Some("HEAD"),
@@ -181,20 +180,20 @@ impl SlugGit {
             None,
             None,
             Some(&tree)
-        ).map_err(|e| format!("Failed to amend commit: {}", e))?;
+        )?;
         
         Ok(())
     }
 }
 
-pub fn get_commit_hash() -> Result<String, Box<dyn Error>> {
-    let repo = git2::Repository::discover(".").map_err(|e| format!("Failed to discover git2::Repository: {}", e))?;
-    let head = repo.head().map_err(|e| format!("Failed to get HEAD: {}", e))?;
-    let commit = head.peel_to_commit().map_err(|e| format!("Failed to peel to commit: {}", e))?;
+pub fn get_commit_hash() -> Result<String, SlugError> {
+    let repo = git2::Repository::discover(".")?;
+    let head = repo.head()?;
+    let commit = head.peel_to_commit()?;
     Ok(commit.id().to_string())
 }
 
-pub fn get_path() -> Result<PathBuf, Box<dyn Error>> {
-    let repo = git2::Repository::discover(".").map_err(|e| format!("Failed to discover git2::Repository: {}", e))?;
+pub fn get_path() -> Result<PathBuf, SlugError> {
+    let repo = git2::Repository::discover(".")?;
     Ok(repo.path().parent().expect("Parent path should always exist").to_path_buf())
 }
