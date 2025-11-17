@@ -7,17 +7,18 @@ use std::cmp::Ordering;
 use std::error::Error;
 use regex::Regex;
 
-// TODO: this macro is nonfunctional
 macro_rules! add_libs {
-    ($parsers:ident, $(($fn_ptr:ident, $ver:expr)),+ $(,)?) => {
+    ($parsers:ident, { $($lib_name:expr => [$(($fn_ptr:ident, $ver:expr)),+ $(,)?]),+ $(,)? }) => {
         $(
             $parsers.insert(
-                "pytest".to_string(),
+                $lib_name.to_string(),
                 vec![
-                    Parser {
-                        version: Version::from_str($ver).expect("Bad library version format!"),
-                        parser: $fn_ptr,
-                    },
+                    $(
+                        Parser {
+                            version: Version::from_str($ver).expect("Bad library version format!"),
+                            parser: $fn_ptr,
+                        },
+                    )+
                 ]
             );
         )+
@@ -115,25 +116,10 @@ impl Lib {
 pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<Vec<PerfData>, Box<dyn Error>> {
     let mut parsers: HashMap<String, Vec<Parser>> = HashMap::new();
 
-    parsers.insert(
-        "pytest".to_string(),
-        vec![
-            Parser {
-                version: Version::from_str("7.3.0").expect("Bad library version format!"),
-                parser: pytest_7_3_0,
-            }
-        ]
-    );
-
-    parsers.insert(
-        "pyperf".to_string(),
-        vec![
-            Parser {
-                version: Version::from_str("2.7.0").expect("Bad library version format!"),
-                parser: pyperf_2_7_0,
-            }
-        ]
-    );
+    add_libs!(parsers, {
+        "pytest" => [(pytest_7_3_0, "7.3.0")],
+        "pyperf" => [(pyperf_2_7_0, "2.7.0")]
+    });
 
     let versions = parsers.get(&lib.name).ok_or("Library not found")?;
 
