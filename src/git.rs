@@ -46,17 +46,20 @@ impl SlugGit {
 
 
     pub fn create_branch(&self, branch_name: &str) -> Result<(), SlugError> {
-        let head = self.repo.head()?;
-        let commit = head.peel_to_commit()?;
+        let treebuilder = self.repo.treebuilder(None)?;
+        let tree_oid = treebuilder.write()?;
+        let tree = self.repo.find_tree(tree_oid)?;
 
-        let first_commit = commit.parents().nth_back(0);
-
-        let first_commit = match first_commit {
-            Some(ancestor) => ancestor,
-            None => commit,
-        };
+        let sig = git2::Signature::now("Slug", "slug@slug.internal").map_err(|e| SlugError::Git(e))?;
         
-        self.repo.branch(branch_name, &first_commit, false)?;
+        self.repo.commit(
+            Some(&format!("refs/heads/{}", branch_name)),
+            &sig,
+            &sig,
+            "Initial slug commit",
+            &tree,
+            &[],
+        )?;
         
         Ok(())
     }
