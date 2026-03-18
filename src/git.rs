@@ -81,41 +81,42 @@ impl SlugGit {
     }
 
 
-    pub fn edit_branch_slug(&self, test_name: &String, test_data: &String) -> Result<(), SlugError> {
+    pub fn edit_branch_slug(&self, commit_hash: &str, updates: &[(String, String)]) -> Result<(), SlugError> {
         let branch_ref = format!("refs/heads/slug");
-        let mut branch = self.repo.find_reference(&branch_ref)?;
+        let branch = self.repo.find_reference(&branch_ref)?;
         let branch_commit = branch.peel_to_commit()?;
 
-
-        // Prepare a TreeBuilder and write test_data to the test_name file
+        // Prepare TreeBuilder and write test_data to the test_name file
         let tree = branch_commit.tree()?;
         let mut tree_builder = self.repo.treebuilder(Some(&tree))?;
 
-        let mut current_content = String::new();
-        if self.file_exists(test_name)? {
-            // Get the current content of the file
-            let entry = tree.get_name(test_name).ok_or_else(|| SlugError::Git(git2::Error::from_str("File not found in tree")))?;
-            let blob = self.repo.find_blob(entry.id())?;
-            current_content = String::from_utf8(blob.content().to_vec())
-                .map_err(|e| SlugError::Parsing(e.to_string()))?;
+        for (test_name, test_data) in updates {
+            let mut current_content = String::new();
+            if self.file_exists(test_name)? {
+                // Get the current content of the file
+                let entry = tree.get_name(test_name).ok_or_else(|| SlugError::Git(git2::Error::from_str("File not found in tree")))?;
+                let blob = self.repo.find_blob(entry.id())?;
+                current_content = String::from_utf8(blob.content().to_vec()).map_err(|e| SlugError::Parsing(e.to_string()))?;
+            }
+
+            // Append new data to existing content
+            current_content.push_str(test_data);
+
+            let content_oid = self.repo.blob(current_content.as_bytes())?;
+            tree_builder.insert(test_name, content_oid, 0o100644)?;
         }
-
-        // Append new data to the existing content
-        current_content.push_str(test_data);
-
-        let content_oid = self.repo.blob(current_content.as_bytes())?;
-        tree_builder.insert(test_name, content_oid, 0o100644)?;
+        
         let updated_tree_oid = tree_builder.write()?;
 
         // Create a new commit on this updated tree and use the parent commit
-        let sig = git2::Signature::now("Slug", "slug@slug.internal")?;
+        let sig = git2::Signature::now("Slug", "slug@slug.internal").map_err(|e| SlugError::Git(e))?;
         let updated_tree = self.repo.find_tree(updated_tree_oid)?;
 
         self.repo.commit(
             Some(&branch_ref),
             &sig,
             &sig,
-            &format!("Updating {} on slug", test_name),
+            &format!("Update benchmarks for commit {}", commit_hash),
             &updated_tree,
             &[&branch_commit],
         )?;

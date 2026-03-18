@@ -9,14 +9,23 @@ use crate::errors::SlugError;
 
 // TODO: dont checkout just write directly the data to branch
 pub fn insert(slug_git: &SlugGit, data: &Vec<PerfData>) -> Result<(), SlugError> {
+    if data.is_empty() {
+        return Ok(());
+    }
+
+    let mut updates = Vec::new();
+    let commit_hash = &data[0].commit_hash;
+
     for entry in data.iter() {
         let mut csv_buffer = Vec::new();
-        let mut writer = Writer::from_writer(Cursor::new(&mut csv_buffer));
+        let writer = Writer::from_writer(Cursor::new(&mut csv_buffer));
         dbm_csv::get_data_entry_string(writer, entry, slug_git.file_exists(&entry.name)?)?;
 
         let csv_string = String::from_utf8(csv_buffer).map_err(|e| SlugError::Parsing(e.to_string()))?;
-        slug_git.edit_branch_slug(&entry.name, &csv_string)?;
+        updates.push((entry.name.clone(), csv_string));
     }
+
+    slug_git.edit_branch_slug(commit_hash, &updates)?;
 
     Ok(())
 }
