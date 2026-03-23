@@ -81,7 +81,7 @@ impl SlugGit {
     }
 
 
-    pub fn edit_branch_slug(&self, commit_hash: &str, updates: &[(String, String)]) -> Result<(), SlugError> {
+    pub fn edit_branch_slug(&self, commit_hash: &str, updates: &[(String, String)]) -> Result<String, SlugError> {
         let branch_ref = format!("refs/heads/slug");
         let branch = self.repo.find_reference(&branch_ref)?;
         let branch_commit = branch.peel_to_commit()?;
@@ -112,15 +112,37 @@ impl SlugGit {
         let sig = git2::Signature::now("Slug", "slug@slug.internal").map_err(|e| SlugError::Git(e))?;
         let updated_tree = self.repo.find_tree(updated_tree_oid)?;
 
-        self.repo.commit(
+        let message = format!(
+            "Benchmark data for {}\n\nTarget-Commit: {}",
+            commit_hash,
+            commit_hash
+        );
+
+        let new_commit_oid = self.repo.commit(
             Some(&branch_ref),
             &sig,
             &sig,
-            &format!("Update benchmarks for commit {}", commit_hash),
+            &message,
             &updated_tree,
             &[&branch_commit],
         )?;
     
+        Ok(new_commit_oid.to_string())
+    }
+
+    pub fn add_note(&self, target_commit_hash: &str, note_message: &str) -> Result<(), SlugError> {
+        let oid = git2::Oid::from_str(target_commit_hash).map_err(|e| SlugError::Git(e))?;
+        let sig = git2::Signature::now("Slug", "slug@slug.internal").map_err(|e| SlugError::Git(e))?;
+        
+        self.repo.note(
+            &sig,
+            &sig,
+            Some("refs/notes/slug"),
+            oid,
+            note_message,
+            false // Overwrite if note already exists
+        )?;
+
         Ok(())
     }
 

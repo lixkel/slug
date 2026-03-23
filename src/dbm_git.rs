@@ -25,7 +25,10 @@ pub fn insert(slug_git: &SlugGit, data: &Vec<PerfData>) -> Result<(), SlugError>
         updates.push((entry.name.clone(), csv_string));
     }
 
-    slug_git.edit_branch_slug(commit_hash, &updates)?;
+    let slug_commit_hash = slug_git.edit_branch_slug(commit_hash, &updates)?;
+
+    let note_message = format!("Benchmark-Results: {}", slug_commit_hash);
+    slug_git.add_note(commit_hash, &note_message)?;
 
     Ok(())
 }
