@@ -140,7 +140,7 @@ impl SlugGit {
             Some("refs/notes/slug"),
             oid,
             note_message,
-            false // Overwrite if note already exists
+            true // Overwrite if note already exists
         )?;
 
         Ok(())
