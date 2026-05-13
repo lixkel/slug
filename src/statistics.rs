@@ -1,44 +1,71 @@
 use crate::parser::PerfData;
 use crate::errors::SlugError;
 
-type StatFunction = fn(&PerfData) -> Result<f64, SlugError>;
+// Type signature for a function that evaluates history and returns an error if degradation is found
+type StatEvaluator = fn(&[PerfData]) -> Result<(), SlugError>;
 
-struct StatCalculator {
-    name: &'static str,
-    function: StatFunction,
-    required_keys: Vec<&'static str>,
+struct StatCheck {
+    pub name: &'static str,
+    pub evaluator: StatEvaluator,
+    pub required_keys: Vec<&'static str>,
 }
 
-pub fn calculate_stats(perf_data: &mut PerfData) -> Result<(), SlugError> {
-    let stat_functions = vec![
-        StatCalculator {
-            name: "average",
-            function: calculate_average,
-            required_keys: vec!["min", "max"],
-        },
-    ];
+macro_rules! add_stat_checks {
+    ($checks:ident, { $($name:expr => ($evaluator:ident, [$($req:expr),*])),+ $(,)? }) => {
+        $(
+            $checks.push(
+                StatCheck {
+                    name: $name,
+                    evaluator: $evaluator,
+                    required_keys: vec![$($req),*],
+                }
+            );
+        )+
+    };
+}
 
-    for calculator in stat_functions {
-        if calculator.required_keys.iter().all(|&key| perf_data.map.contains_key(key)) {
-            if let Ok(result) = (calculator.function)(perf_data) {
-                perf_data.map.insert(calculator.name.to_string(), result);
-            }
+pub fn calculate_stats(history: &[PerfData]) -> Result<(), SlugError> {
+    if history.is_empty() {
+        return Ok(());
+    }
+
+    let mut checks: Vec<StatCheck> = Vec::new();
+
+    add_stat_checks!(checks, {
+        "ewma" => (evaluate_ewma, ["mean"]),
+    });
+
+    let latest = history.last().unwrap();
+
+    for check in checks {
+        if check.required_keys.iter().all(|&k| latest.map.contains_key(k)) {
+            (check.evaluator)(history)?;
         }
     }
+
     Ok(())
 }
 
+fn evaluate_ewma(history: &[PerfData]) -> Result<(), SlugError> {
+    ewma(history, 0.2)
+}
+
 // Exponential weighted moving average calculator
-pub fn ewma_calc(values: &Vec<PerfData>, alpha: f64) -> Vec<f64> {
+pub fn ewma_calc(values: &[PerfData], alpha: f64) -> Vec<f64> {
+    if values.is_empty() {
+        return Vec::new();
+    }
+    
+    const METRIC: &str = "mean";
+
     let mut averages = Vec::new();
 
-    let mut previous_average = values[0].map["mean"];
+    let mut previous_average = values[0].map[METRIC];
 
     averages.push(previous_average);
 
-    for value in values.iter() { // TODO: add verbose option
-        //println!("{}", value.map["mean"]);
-        let current_average = alpha * value.map["mean"] + (1.0 - alpha) * previous_average;
+    for value in values.iter() {
+        let current_average = alpha * value.map[METRIC] + (1.0 - alpha) * previous_average;
         averages.push(current_average);
         previous_average = current_average;
     }
@@ -47,13 +74,13 @@ pub fn ewma_calc(values: &Vec<PerfData>, alpha: f64) -> Vec<f64> {
 }
 
 // Exponential weighted moving average evaluation
-pub fn ewma(values: &Vec<PerfData>, alpha: f64) -> Result<(), SlugError> {
+pub fn ewma(values: &[PerfData], alpha: f64) -> Result<(), SlugError> {
     if values.len() <= 1 {
         println!("\x1b[38;2;255;165;0mToo few samples for exponential moving average\x1b[0m");
         return Ok(());
     }
 
-    let avg = ewma_calc(&values, alpha);
+    let avg = ewma_calc(values, alpha);
 
     // Calculate percentual change in last two values
     let len = avg.len();
