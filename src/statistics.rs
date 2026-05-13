@@ -33,6 +33,7 @@ pub fn calculate_stats(history: &[PerfData]) -> Result<(), SlugError> {
 
     add_stat_checks!(checks, {
         "ewma" => (evaluate_ewma, ["mean"]),
+        "zscore" => (evaluate_zscore, ["mean"]),
     });
 
     let latest = history.last().unwrap();
@@ -48,6 +49,63 @@ pub fn calculate_stats(history: &[PerfData]) -> Result<(), SlugError> {
 
 fn evaluate_ewma(history: &[PerfData]) -> Result<(), SlugError> {
     ewma(history, 0.2)
+}
+
+fn evaluate_zscore(history: &[PerfData]) -> Result<(), SlugError> {
+    const METRIC: &str = "mean";
+    
+    // We need >2 history items to calculate std_dev
+    if history.len() < 3 {
+        println!("\x1b[38;2;255;165;0mToo few samples for Z-Score anomaly detection\x1b[0m");
+        return Ok(());
+    }
+
+    let latest = history.last().unwrap();
+    let historical_entries = &history[..history.len() - 1];
+
+    let current_val = latest.map[METRIC];
+    let values: Vec<f64> = historical_entries.iter()
+        .filter_map(|entry| entry.map.get(METRIC).copied())
+        .collect();
+
+    // Standard deviation needs >2 elements (N - 1)
+    if values.len() < 2 {
+        return Ok(());
+    }
+
+    let mean: f64 = values.iter().sum::<f64>() / values.len() as f64;
+    
+    // Calculate sample standard deviation
+    let mut variance_sum = 0.0;
+    for v in &values {
+        let diff = v - mean;
+        variance_sum += diff * diff;
+    }
+    let variance = variance_sum / (values.len() - 1) as f64; // Bessel's correction
+    let std_dev = variance.sqrt();
+
+    // std_dev == 0.0
+    if std_dev < f64::EPSILON {
+        if current_val > mean {
+             return Err(SlugError::PerformanceRegression(
+                format!("Z-Score: {} increased from flat baseline", METRIC)
+            ));
+        }
+        return Ok(());
+    }
+
+    let z_score = (current_val - mean) / std_dev;
+
+    // Z-score > 3.0 execution time is 3 standard deviations worse than average
+    if z_score > 3.0 {
+        println!("\x1b[31mZ-Score anomaly detected!!!\x1b[0m");
+        return Err(SlugError::PerformanceRegression(
+            format!("Z-Score for {} is {:.2} (threshold 3.0)", METRIC, z_score)
+        ));
+    }
+
+    println!("\x1b[32mZ-Score within norm ({:.2}) for {}\x1b[0m", z_score, METRIC);
+    Ok(())
 }
 
 // Exponential weighted moving average calculator
