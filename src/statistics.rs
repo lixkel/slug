@@ -28,12 +28,6 @@ pub fn calculate_stats(perf_data: &mut PerfData) -> Result<(), SlugError> {
     Ok(())
 }
 
-pub fn calculate_average(perf_data: &PerfData) -> Result<f64, SlugError> {
-    let sum: f64 = perf_data.map.values().sum();
-    let count = perf_data.map.len() as f64;
-    Ok(sum / count)
-}
-
 // Exponential weighted moving average calculator
 pub fn ewma_calc(values: &Vec<PerfData>, alpha: f64) -> Vec<f64> {
     let mut averages = Vec::new();
