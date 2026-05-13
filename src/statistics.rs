@@ -53,10 +53,10 @@ pub fn ewma_calc(values: &Vec<PerfData>, alpha: f64) -> Vec<f64> {
 }
 
 // Exponential weighted moving average evaluation
-pub fn ewma(values: &Vec<PerfData>, alpha: f64) {
+pub fn ewma(values: &Vec<PerfData>, alpha: f64) -> Result<(), SlugError> {
     if values.len() <= 1 {
         println!("\x1b[38;2;255;165;0mToo few samples for exponential moving average\x1b[0m");
-        return;
+        return Ok(());
     }
 
     let avg = ewma_calc(&values, alpha);
@@ -67,8 +67,11 @@ pub fn ewma(values: &Vec<PerfData>, alpha: f64) {
 
     if change < 0.2 {
         println!("\x1b[32mAll within norm in exponential moving average\x1b[0m");
-        return;
+        Ok(())
+    } else {
+        println!("\x1b[31mSignificant performance degradation!!!\x1b[0m");
+        Err(SlugError::PerformanceRegression(
+            format!("Performance degraded by {:.2}%", change * 100.0)
+        ))
     }
-
-    println!("\x1b[31mSignificant performance degradation!!!\x1b[0m");
 }

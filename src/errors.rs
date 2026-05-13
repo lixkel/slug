@@ -7,6 +7,7 @@ pub enum SlugError {
     Csv(csv::Error),
     Cli(String),
     Parsing(String),
+    PerformanceRegression(String),
 }
 
 impl fmt::Display for SlugError {
@@ -17,6 +18,7 @@ impl fmt::Display for SlugError {
             SlugError::Csv(err) => write!(f, "CSV error: {}", err),
             SlugError::Cli(msg) => write!(f, "CLI error: {}", msg),
             SlugError::Parsing(msg) => write!(f, "Parsing error: {}", msg),
+            SlugError::PerformanceRegression(msg) => write!(f, "Performance regression detected: {}", msg),
         }
     }
 }
