@@ -123,8 +123,8 @@ pub fn ewma_calc(values: &[PerfData], alpha: f64) -> Vec<f64> {
 
     averages.push(previous_average);
 
-    for value in values.iter() {
-        let current_average = alpha * value.map[METRIC] + (1.0 - alpha) * previous_average;
+    for i in 1..values.len() {
+        let current_average = alpha * values[i].map[METRIC] + (1.0 - alpha) * previous_average;
         averages.push(current_average);
         previous_average = current_average;
     }
