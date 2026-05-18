@@ -11,6 +11,8 @@ pub struct CliOptions {
     pub library_type: Option<String>,
     pub amend: bool,
     pub subcommand: Option<String>,
+    pub zscore_threshold: f64,
+    pub ewma_alpha: f64,
 }
 
 pub enum PerfDataReader {
@@ -19,7 +21,7 @@ pub enum PerfDataReader {
 }
 
 fn print_usage(program: &str, opts: Options) {
-    let brief = format!("Usage: {} -t LIBRARY -f FILE", program);
+    let brief = format!("Usage: {} -t LIBRARY [-f FILE] [--zscore THRESHOLD] [--ewma ALPHA]", program);
     print!("{}", opts.usage(&brief));
 }
 
@@ -27,7 +29,7 @@ pub fn parse_args() -> Result<CliOptions, SlugError> {
     let args: Vec<String> = env::args().collect();
     let program = args[0].clone();
 
-    let subcommand = if args.len() > 1 {
+    let subcommand = if args.len() > 1 && !args[1].starts_with('-') {
         let subcommand = args[1].clone();
         match subcommand.as_str() {
             "setup" => Some(subcommand),
@@ -39,9 +41,12 @@ pub fn parse_args() -> Result<CliOptions, SlugError> {
     opts.optopt("f", "file", "set input file name", "FILENAME");
     opts.optopt("t", "type", "set library type", "LIBRARY");
     opts.optflag("a", "amend", "store records in current branch using commit amend");
+    opts.optopt("", "zscore", "set z-score anomaly threshold (default: 3.0)", "FLOAT");
+    opts.optopt("", "ewma", "set ewma smoothing factor alpha (default: 0.2)", "FLOAT");
     opts.optflag("h", "help", "print this help menu");
 
-    let matches = opts.parse(&args[1..])?;
+    let parse_start = if subcommand.is_some() { 2 } else { 1 };
+    let matches = opts.parse(&args[parse_start..])?;
 
     if matches.opt_present("h") {
         print_usage(&program, opts);
@@ -51,6 +56,16 @@ pub fn parse_args() -> Result<CliOptions, SlugError> {
     let file = matches.opt_str("f");
     let library_type = matches.opt_str("t");
     let amend = matches.opt_present("a");
+
+    let zscore_threshold = match matches.opt_str("zscore") {
+        Some(val) => val.parse::<f64>().map_err(|_| SlugError::Cli("Invalid float for zscore".to_string()))?,
+        None => 3.0,
+    };
+
+    let ewma_alpha = match matches.opt_str("ewma") {
+        Some(val) => val.parse::<f64>().map_err(|_| SlugError::Cli("Invalid float for ewma".to_string()))?,
+        None => 0.2,
+    };
 
     if library_type.is_none() && subcommand.is_none() {
         print_usage(&program, opts);
@@ -62,6 +77,8 @@ pub fn parse_args() -> Result<CliOptions, SlugError> {
         library_type,
         amend,
         subcommand,
+        zscore_threshold,
+        ewma_alpha,
     })
 }
 

@@ -1,8 +1,9 @@
 use crate::parser::PerfData;
 use crate::errors::SlugError;
+use crate::cli::CliOptions;
 
 // Type signature for a function that evaluates history and returns an error if degradation is found
-type StatEvaluator = fn(&[PerfData]) -> Result<(), SlugError>;
+type StatEvaluator = fn(&[PerfData], &CliOptions) -> Result<(), SlugError>;
 
 struct StatCheck {
     pub name: &'static str,
@@ -24,7 +25,7 @@ macro_rules! add_stat_checks {
     };
 }
 
-pub fn calculate_stats(history: &[PerfData]) -> Result<(), SlugError> {
+pub fn calculate_stats(history: &[PerfData], options: &CliOptions) -> Result<(), SlugError> {
     if history.is_empty() {
         return Ok(());
     }
@@ -40,18 +41,18 @@ pub fn calculate_stats(history: &[PerfData]) -> Result<(), SlugError> {
 
     for check in checks {
         if check.required_keys.iter().all(|&k| latest.map.contains_key(k)) {
-            (check.evaluator)(history)?;
+            (check.evaluator)(history, options)?;
         }
     }
 
     Ok(())
 }
 
-fn evaluate_ewma(history: &[PerfData]) -> Result<(), SlugError> {
-    ewma(history, 0.2)
+fn evaluate_ewma(history: &[PerfData], options: &CliOptions) -> Result<(), SlugError> {
+    ewma(history, options.ewma_alpha)
 }
 
-fn evaluate_zscore(history: &[PerfData]) -> Result<(), SlugError> {
+fn evaluate_zscore(history: &[PerfData], options: &CliOptions) -> Result<(), SlugError> {
     const METRIC: &str = "mean";
     
     // We need >2 history items to calculate std_dev
@@ -96,11 +97,11 @@ fn evaluate_zscore(history: &[PerfData]) -> Result<(), SlugError> {
 
     let z_score = (current_val - mean) / std_dev;
 
-    // Z-score > 3.0 execution time is 3 standard deviations worse than average
-    if z_score > 3.0 {
+    // Z-score > threshold execution time is 3 standard deviations worse than average
+    if z_score > options.zscore_threshold {
         println!("\x1b[31mZ-Score anomaly detected!!!\x1b[0m");
         return Err(SlugError::PerformanceRegression(
-            format!("Z-Score for {} is {:.2} (threshold 3.0)", METRIC, z_score)
+            format!("Z-Score for {} is {:.2} (threshold {:.1})", METRIC, z_score, options.zscore_threshold)
         ));
     }
 

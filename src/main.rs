@@ -37,7 +37,7 @@ fn main() -> Result<(), SlugError> {
         ldata = dbm_git::get_latest_n(&slug_git, &data[0].name, 3)?;
     }
 
-    statistics::calculate_stats(&ldata)?;
+    statistics::calculate_stats(&ldata, &options)?;
 
     Ok(())
     }
