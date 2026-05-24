@@ -1,0 +1,62 @@
+# action.yml
+name: "Slug Performance Tracker"
+description: "Records performance test data in a parallel Git tree using Slug"
+inputs:
+  file:
+    description: "Path to the benchmark output file"
+    required: true
+  type:
+    description: "Parser type (pytest-7.3.0, pyperf-2.7.0, ...)"
+    required: true
+  github_token:
+    description: "GitHub token for saving performance test data to parallel Git tree"
+    required: false
+    default: ${{ github.token }}
+  slug_binary_path:
+    description: "Optional path to Slug binary. If not provided, Slug will be built from source."
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: "Prepare Git"
+      shell: "bash"
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        
+        echo "Fetching existing slug data..."
+        # Fetch slug branch and notes so we can add to them
+        git fetch origin slug:slug || echo "Slug branch not found, will be created."
+        git fetch origin "refs/notes/*:refs/notes/*" || echo "No existing notes found."
+
+    - name: "Setup Slug"
+      shell: "bash"
+      # TODO: add downloading of releases
+      run: |
+        if [ -n "${{ inputs.slug_binary_path }}" ] && [ -f "${{ inputs.slug_binary_path }}" ]; then
+           echo "Using provided binary ${{ inputs.slug_binary_path }}"
+           echo "SLUG_BIN=${{ inputs.slug_binary_path }}" >> $GITHUB_ENV
+        else
+           echo "No binary provided. Building from source ..."
+           git clone https://gitlab.mff.cuni.cz/teaching/nprg045/horky/mojikm/implementation.git /tmp/slug_source
+           cd /tmp/slug_source
+           cargo build --release
+           echo "SLUG_BIN=/tmp/slug_source/target/release/slug" >> $GITHUB_ENV
+        fi
+
+    - name: "Run Slug"
+      shell: "bash"
+      run: |
+        echo "Processing ${{ inputs.file }} with parser ${{ inputs.type }}..."
+        $SLUG_BIN -f "${{ inputs.file }}" -t "${{ inputs.type }}"
+
+    - name: "Push Slug Data"
+      shell: "bash"
+      # Only push if we are on default (master, main, etc.)
+      if: github.event_name == "push"
+      run: |
+        echo "Pushing slug branch and git notes back to repository..."
+        git push origin slug
+        git push origin refs/notes/slug

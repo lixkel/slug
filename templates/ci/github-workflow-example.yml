@@ -1,0 +1,48 @@
+name: "Performance Benchmarks"
+
+on:
+  push:
+    branches: [ "master", "main" ]
+
+jobs:
+  benchmark:
+    runs-on: "ubuntu-latest"
+    permissions:
+      contents: "write" # Allows Slug to push the slug branch back
+
+    steps:
+      - name: "Checkout repository"
+        uses: "actions/checkout@v4"
+        with:
+          # Fetch full history because of notes and parallel branches
+          fetch-depth: 0 
+
+      # -------------------------------------------------------------
+      # 1. Set up specific language environment for your project
+      # -------------------------------------------------------------
+      - name: "Setup Python"
+        uses: "actions/setup-python@v5"
+        with:
+          python-version: "3.11"
+          
+      - name: "Install dependencies"
+        run: "pip install pyperf lxml" # Adjust per projects dependencies
+
+      # -------------------------------------------------------------
+      # 2. Run project's tests and save output to a file
+      # -------------------------------------------------------------
+      - name: "Run Benchmark"
+        run: |
+          # Replace this with projects actual benchmark command
+          python benchmarks/bench_html.py parse > benchmark_output.txt
+
+      # -------------------------------------------------------------
+      # 3. Call the Slug action
+      # -------------------------------------------------------------
+      - name: "Track Benchmarks with Slug"
+        uses: "lixkel/slug-action@v1" 
+        with:
+          file: "benchmark_output.txt"
+          type: "pyperf-2.7.0"
+          # Optional: Path to Slug binary can be provided, otherwise Slug is built from source
+          # slug_binary_path: "/path/to/slug"
