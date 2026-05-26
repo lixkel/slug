@@ -1,13 +1,10 @@
 use crate::parser::PerfData;
 
-use std::fs::{OpenOptions, File, create_dir_all};
-use std::io::{BufWriter, BufReader, Cursor};
+use std::io::BufReader;
 use std::collections::HashMap;
 use csv::{Writer, ReaderBuilder};
 use crate::errors::SlugError;
 
-use crate::git;
-use crate::git::SlugGit;
 use std::io::Read;
 
 

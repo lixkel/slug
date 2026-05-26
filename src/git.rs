@@ -1,5 +1,5 @@
 use git2;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::fs;
 use crate::errors::SlugError;
 
@@ -22,19 +22,6 @@ impl SlugGit {
         
         Ok(instance)
     }
-
-
-    pub fn get_path(&self) -> Result<PathBuf, SlugError> {
-        Ok(self.repo.path().parent().expect("Parent path should always exist").to_path_buf())
-    }
-
-
-    pub fn get_commit_hash(&self) -> Result<String, SlugError> {
-        let head = self.repo.head()?;
-        let commit = head.peel_to_commit()?;
-        Ok(commit.id().to_string())
-    }
-
 
     pub fn branch_exists(&self, branch_name: &str) -> Result<bool, SlugError> {
         match self.repo.find_branch(branch_name, git2::BranchType::Local) {
@@ -71,15 +58,6 @@ impl SlugGit {
         }
         Ok(())
     }
-
-
-    pub fn get_cur_branch(&self) -> Result<String, SlugError> {        
-        let head = self.repo.head()?;
-        head.shorthand()
-            .map(String::from)
-            .ok_or_else(|| SlugError::Git(git2::Error::from_str("HEAD is not pointing to a branch")))
-    }
-
 
     pub fn edit_branch_slug(&self, commit_hash: &str, updates: &[(String, String)]) -> Result<String, SlugError> {
         let branch_ref = format!("refs/heads/slug");
@@ -148,7 +126,7 @@ impl SlugGit {
 
 
     pub fn read_file_slug(&self, file_path: &String) -> Result<Vec<u8>, SlugError> {
-        let mut branch = self.repo.find_reference(&self.slug_branch_ref)?;
+        let branch = self.repo.find_reference(&self.slug_branch_ref)?;
         let branch_commit = branch.peel_to_commit()?;
         let tree = branch_commit.tree()?;
 
@@ -161,7 +139,7 @@ impl SlugGit {
 
     pub fn file_exists(&self, file_path: &String) -> Result<bool, SlugError> {    
         let branch_ref = format!("refs/heads/slug");
-        let mut branch = self.repo.find_reference(&branch_ref)?;
+        let branch = self.repo.find_reference(&branch_ref)?;
         let branch_commit = branch.peel_to_commit()?;
         let tree = branch_commit.tree()?;
 
@@ -190,7 +168,8 @@ impl SlugGit {
     pub fn amend_slug(&self) -> Result<(), SlugError> {
         let head = self.repo.head()?;
         let commit = head.peel_to_commit()?;
-        
+
+        // TODO: fixissue: if anything was added before it will be commited, maybe just remove amend
         let mut index = self.repo.index()?;
         let slug_path = Path::new(".slug");
         Self::add_all_in_dir(&mut index, slug_path)?;
@@ -219,7 +198,3 @@ pub fn get_commit_hash() -> Result<String, SlugError> {
     Ok(commit.id().to_string())
 }
 
-pub fn get_path() -> Result<PathBuf, SlugError> {
-    let repo = git2::Repository::discover(".")?;
-    Ok(repo.path().parent().expect("Parent path should always exist").to_path_buf())
-}

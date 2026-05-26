@@ -1,8 +1,7 @@
 use std::fs::{OpenOptions, File, create_dir_all};
-use std::io::{BufWriter, BufReader, Cursor};
+use std::io::{BufWriter, BufReader};
 use crate::parser::PerfData;
 use csv::Writer;
-use crate::git;
 use crate::git::SlugGit;
 use crate::dbm_csv;
 use crate::errors::SlugError;
@@ -22,7 +21,7 @@ pub fn insert(slug_git: &SlugGit, data: &Vec<PerfData>) -> Result<(), SlugError>
             .append(true)
             .create(true)
             .open(&file_path)?;
-        let mut writer = Writer::from_writer(BufWriter::new(file));
+        let writer = Writer::from_writer(BufWriter::new(file));
 
         dbm_csv::get_data_entry_string(writer, entry, file_exists)?;
     }

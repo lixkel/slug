@@ -6,7 +6,6 @@ use crate::cli::CliOptions;
 type StatEvaluator = fn(&[PerfData], &CliOptions) -> Result<(), SlugError>;
 
 struct StatCheck {
-    pub name: &'static str,
     pub evaluator: StatEvaluator,
     pub required_keys: Vec<&'static str>,
 }
@@ -16,7 +15,6 @@ macro_rules! add_stat_checks {
         $(
             $checks.push(
                 StatCheck {
-                    name: $name,
                     evaluator: $evaluator,
                     required_keys: vec![$($req),*],
                 }

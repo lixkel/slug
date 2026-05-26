@@ -1,9 +1,8 @@
 use crate::parser::PerfData;
-use crate::git;
 use crate::git::SlugGit;
 use crate::dbm_csv;
 use csv::Writer;
-use std::io::{BufWriter, BufReader, Cursor};
+use std::io::{BufReader, Cursor};
 use crate::errors::SlugError;
 
 
