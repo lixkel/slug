@@ -14,7 +14,7 @@ fn main() -> Result<(), SlugError> {
 
     let reader = cli::get_reader(&options.file)?;
 
-    let lib_str = &options.library_type.ok_or_else(|| SlugError::Cli("Missing mandatory option -t".to_string()))?;
+    let lib_str = options.library_type.as_ref().ok_or_else(|| SlugError::Cli("Missing mandatory option -t".to_string()))?;
     let lib = parser::Lib::from_str(lib_str).ok_or_else(|| SlugError::Parsing("Library in bad format".to_string()))?;
 
     let data = parser::parse(reader, &lib)?;
