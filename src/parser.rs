@@ -38,9 +38,12 @@ pub struct Lib {
     pub version: Version,
 }
 
+// Type signature for a function that parses a library's raw output into PerfData
+type ParserFn = fn(&str) -> Result<Vec<PerfData>, SlugError>;
+
 struct Parser {
     pub version: Version,
-    pub parser: fn(&str) -> Result<Vec<PerfData>, SlugError>,
+    pub parser: ParserFn,
 }
 
 #[derive(Debug)]
@@ -121,15 +124,20 @@ pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<Vec<PerfData>, Sl
         "pyperf" => [(pyperf_2_7_0, "2.7.0")]
     });
 
-    let versions = parsers.get(&lib.name).ok_or_else(|| SlugError::Parsing("Library not found".to_string()))?;
+    let versions = parsers.get(&lib.name)
+        .ok_or_else(|| SlugError::Parsing(format!("No parser registered for library '{}'", lib.name)))?;
 
-    let mut closest: &Parser = &versions[0];
-
-    for v in versions {
-        if closest.version > v.version && v.version <= lib.version {
-            closest = v;
-        }
-    }
+    // Select highest parser version that is <= than the requested 
+    // Each parsers version is the minimum library version it supports
+    // So the closest lower or equal entry is the correct one
+    // If the requested version predates every registered parser no compatible parser exists
+    let closest = versions.iter()
+        .filter(|p| p.version <= lib.version)
+        .max_by(|a, b| a.version.cmp(&b.version))
+        .ok_or_else(|| SlugError::Parsing(format!(
+            "No parser for '{}' compatible with version {}.{}.{}",
+            lib.name, lib.version.major, lib.version.minor, lib.version.patch
+        )))?;
 
     let mut s = String::new();
 
