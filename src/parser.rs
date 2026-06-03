@@ -1,5 +1,6 @@
 use crate::cli;
 use crate::git;
+use crate::units;
 use crate::errors::SlugError;
 
 use std::io::{Read};
@@ -151,38 +152,52 @@ pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<Vec<PerfData>, Sl
 }
 
 fn pytest_7_3_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
-    let regex = Regex::new(
-        r"\S+\s+(?P<name>\w+)\s+(?P<min>\d+\.\d+)\s+(?P<max>\d+\.\d+)\s+(?P<mean>\d+\.\d+)\s+(?P<stddev>\d+\.\d+)\s+(?P<median>\d+\.\d+)"
-    )?;
+    // pytest-benchmark prints the time unit once in header
+    let unit_re = Regex::new(r"\(time in (?P<unit>\w+)\)")?;
+    let unit = unit_re.captures(s)
+        .map(|c| c["unit"].to_string())
+        .ok_or_else(|| SlugError::Parsing("Could not find time unit in pytest-benchmark header".to_string()))?;
 
+    // We expect 5 columns: min, max, mean, stddev, median
+    // The regex matches numbers that look like this:
+    // "12.34"
+    // "1,234.56"           (can have commas)
+    // "12.34 (1.0)"        (pytest sometimes adds extra stuff in parentheses)
+    let num = r"([\d,]+\.\d+)(?:\s+\([\d.]+\))?";
+    let row_re = Regex::new(&format!(r"(?m)^\s*(?P<name>\w+)\s+{n}\s+{n}\s+{n}\s+{n}\s+{n}", n = num))?;
+
+    let metrics = ["min", "max", "mean", "stddev", "median"];
     let mut results = Vec::new();
-    
-    for caps in regex.captures_iter(s) {
+
+    for caps in row_re.captures_iter(s) {
         let mut data = PerfData {
             name: caps["name"].to_string(),
             commit_hash: git::get_commit_hash()?,
             map: HashMap::new(),
         };
 
-        data.map.insert("min".to_string(), caps["min"].parse()?);
-        data.map.insert("max".to_string(), caps["max"].parse()?);
-        data.map.insert("mean".to_string(), caps["mean"].parse()?);
-        data.map.insert("stddev".to_string(), caps["stddev"].parse()?);
-        data.map.insert("median".to_string(), caps["median"].parse()?);
-        
+        for (i, metric) in metrics.iter().enumerate() {
+            // Actual numbers start from group 2
+            let raw = caps.get(i + 2).unwrap().as_str().replace(',', "");
+            let value: f64 = raw.parse()?;
+            data.map.insert(metric.to_string(), units::normalize(value, &unit)?);
+        }
+
         results.push(data);
     }
-    
+
     if results.is_empty() {
         return Err(SlugError::Parsing("No matches found".to_string()));
     }
-    
+
     Ok(results)
 }
 
 fn pyperf_2_7_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
+    // pyperf scales unit per benchmark (line), so the unit must be read from each line
+    // mean and stddev each carry their own unit
     let regex = Regex::new(
-        r"(?P<name>\w+): Mean \+- std dev: (?P<mean>\d+\.?\d*) ms \+- (?P<stddev>\d+\.?\d*) (?P<unit>\w+)"
+        r"(?P<name>\w+): Mean \+- std dev: (?P<mean>\d+(?:\.\d+)?) (?P<munit>\w+) \+- (?P<stddev>\d+(?:\.\d+)?) (?P<sunit>\w+)"
     )?;
 
     let mut results = Vec::new();
@@ -194,8 +209,11 @@ fn pyperf_2_7_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
             map: HashMap::new(),
         };
 
-        data.map.insert("mean".to_string(), found["mean"].parse()?);
-        data.map.insert("stddev".to_string(), found["stddev"].parse()?);
+        let mean: f64 = found["mean"].parse()?;
+        let stddev: f64 = found["stddev"].parse()?;
+
+        data.map.insert("mean".to_string(), units::normalize(mean, &found["munit"])?);
+        data.map.insert("stddev".to_string(), units::normalize(stddev, &found["sunit"])?);
 
         results.push(data);
     }
