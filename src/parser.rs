@@ -140,7 +140,8 @@ pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<Vec<PerfData>, Sl
 
     add_libs!(parsers, {
         "pytest" => [(pytest_7_3_0, "7.3.0")],
-        "pyperf" => [(pyperf_2_7_0, "2.7.0")]
+        "pyperf" => [(pyperf_2_7_0, "2.7.0")],
+        "go_testing" => [(go_testing_1_26_4, "1.26.4")]
     });
 
     let versions = parsers.get(&lib.name)
@@ -197,6 +198,34 @@ fn pytest_7_3_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
             let value: f64 = raw.parse()?;
             data.record(metric, value, &unit)?;
         }
+
+        results.push(data);
+    }
+
+    if results.is_empty() {
+        return Err(SlugError::Parsing("No matches found".to_string()));
+    }
+
+    Ok(results)
+}
+
+fn go_testing_1_26_4(s: &str) -> Result<Vec<PerfData>, SlugError> {
+    // go testing prints one line per benchmark:
+    //   BenchmarkFib-16   37124   32459 ns/op   0 B/op   0 allocs/op
+    // Name has thread count suffix which we drop
+    let regex = Regex::new(
+        r"(?m)^(?P<name>Benchmark\w+)(?:-\d+)?\s+\d+\s+(?P<value>[\d.]+)\s+(?P<unit>\S+/op)"
+    )?;
+
+    let commit_hash = git::get_commit_hash()?;
+    let mut results = Vec::new();
+
+    for found in regex.captures_iter(s) {
+        let mut data = PerfData::new(&found["name"], &commit_hash);
+
+        let value: f64 = found["value"].parse()?;
+
+        data.record("mean", value, &found["unit"])?;
 
         results.push(data);
     }
