@@ -47,11 +47,29 @@ struct Parser {
     pub parser: ParserFn,
 }
 
+// Struct for exporting parsed data
 #[derive(Debug)]
 pub struct PerfData {
     pub name: String,
     pub commit_hash: String,
     pub map: HashMap<String, f64>, // I think this could be rewritten to something like "&'a str"
+}
+
+impl PerfData {
+    // Commit hash should be created just once at the beggining of a parser
+    pub fn new(name: &str, commit_hash: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            commit_hash: commit_hash.to_string(),
+            map: HashMap::new(),
+        }
+    }
+
+    // Only allowed way to add metric is to normalize it
+    pub fn record(&mut self, key: &str, value: f64, unit: &str) -> Result<(), SlugError> {
+        self.map.insert(key.to_string(), units::normalize(value, unit)?);
+        Ok(())
+    }
 }
 
 impl Version {
@@ -167,20 +185,17 @@ fn pytest_7_3_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
     let row_re = Regex::new(&format!(r"(?m)^\s*(?P<name>\w+)\s+{n}\s+{n}\s+{n}\s+{n}\s+{n}", n = num))?;
 
     let metrics = ["min", "max", "mean", "stddev", "median"];
+    let commit_hash = git::get_commit_hash()?;
     let mut results = Vec::new();
 
     for caps in row_re.captures_iter(s) {
-        let mut data = PerfData {
-            name: caps["name"].to_string(),
-            commit_hash: git::get_commit_hash()?,
-            map: HashMap::new(),
-        };
+        let mut data = PerfData::new(&caps["name"], &commit_hash);
 
         for (i, metric) in metrics.iter().enumerate() {
             // Actual numbers start from group 2
             let raw = caps.get(i + 2).unwrap().as_str().replace(',', "");
             let value: f64 = raw.parse()?;
-            data.map.insert(metric.to_string(), units::normalize(value, &unit)?);
+            data.record(metric, value, &unit)?;
         }
 
         results.push(data);
@@ -200,20 +215,17 @@ fn pyperf_2_7_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
         r"(?P<name>\w+): Mean \+- std dev: (?P<mean>\d+(?:\.\d+)?) (?P<munit>\w+) \+- (?P<stddev>\d+(?:\.\d+)?) (?P<sunit>\w+)"
     )?;
 
+    let commit_hash = git::get_commit_hash()?;
     let mut results = Vec::new();
 
     for found in regex.captures_iter(s) {
-        let mut data = PerfData {
-            name: found["name"].to_string(),
-            commit_hash: git::get_commit_hash()?,
-            map: HashMap::new(),
-        };
+        let mut data = PerfData::new(&found["name"], &commit_hash);
 
         let mean: f64 = found["mean"].parse()?;
         let stddev: f64 = found["stddev"].parse()?;
 
-        data.map.insert("mean".to_string(), units::normalize(mean, &found["munit"])?);
-        data.map.insert("stddev".to_string(), units::normalize(stddev, &found["sunit"])?);
+        data.record("mean", mean, &found["munit"])?;
+        data.record("stddev", stddev, &found["sunit"])?;
 
         results.push(data);
     }
