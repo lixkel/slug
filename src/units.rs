@@ -7,13 +7,18 @@ fn unit_table() -> HashMap<&'static str, f64> {
 
     t.insert("ns", 1.0);
     t.insert("nsec", 1.0);
+    t.insert("ns/op", 1.0);
     t.insert("us", 1_000.0);
     t.insert("µs", 1_000.0);
     t.insert("usec", 1_000.0);
+    t.insert("us/op", 1_000.0);
+    t.insert("µs/op", 1_000.0);
     t.insert("ms", 1_000_000.0);
     t.insert("msec", 1_000_000.0);
+    t.insert("ms/op", 1_000_000.0);
     t.insert("s", 1_000_000_000.0);
     t.insert("sec", 1_000_000_000.0);
+    t.insert("s/op", 1_000_000_000.0);
 
     t
 }
