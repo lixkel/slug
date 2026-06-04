@@ -43,6 +43,6 @@ jobs:
         uses: "lixkel/slug-action@v1" 
         with:
           file: "benchmark_output.txt"
-          type: "pyperf-2.7.0"
+          type: "pyperf@2.7.0"
           # Optional: Path to Slug binary can be provided, otherwise Slug is built from source
           # slug_binary_path: "/path/to/slug"

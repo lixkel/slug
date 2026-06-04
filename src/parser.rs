@@ -118,18 +118,11 @@ impl Eq for Version {}
 
 impl Lib {
     pub fn from_str(s: &str) -> Option<Self> {
-        let parts: Vec<&str> = s.split('-').collect();
+        // Identifier is "name@version"
+        let (name, ver) = s.split_once('@')?;
+        let version = Version::from_str(ver)?;
 
-        if parts.len() != 2 {
-            return None;
-        }
-
-        let version = Version::from_str(parts[1]);
-
-        match version {
-            Some(version) => Some(Self { name: parts[0].to_string(), version }),
-            None => None,
-        }
+        Some(Self { name: name.to_string(), version })
     }
 }
 
@@ -140,7 +133,7 @@ pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<Vec<PerfData>, Sl
     add_libs!(parsers, {
         "pytest" => [(pytest_7_3_0, "7.3.0")],
         "pyperf" => [(pyperf_2_7_0, "2.7.0")],
-        "go_testing" => [(go_testing_1_26_4, "1.26.4")],
+        "go-testing" => [(go_testing_1_26_4, "1.26.4")],
         "criterion" => [(criterion_0_5_1, "0.5.1")]
     });
 

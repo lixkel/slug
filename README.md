@@ -50,12 +50,12 @@ cargo run -- [OPTIONS]
 
 #### Load data from file
 ```Bash
-slug -f examples/pytest-7.3.0 -t pytest-7.3.0
+slug -f examples/pytest@7.3.0 -t pytest@7.3.0
 ```
 
 #### Load data from pipe
 ```Bash
-pytest-benchmark | slug -t pytest-7.3.0
+pytest-benchmark | slug -t pytest@7.3.0
 ```
 
 ## Currently supported libraries:

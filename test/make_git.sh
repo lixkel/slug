@@ -53,7 +53,7 @@ create_commits() {
         git add "$FILE_NAME"
         git commit -m "Commit $i on branch $cur_branch"
         fake_test
-        ../../target/release/slug -f "$OUTPUT_FILE" -t pytest-7.3.0
+        ../../target/release/slug -f "$OUTPUT_FILE" -t pytest@7.3.0
     done
 }
 

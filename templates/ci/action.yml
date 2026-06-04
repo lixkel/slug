@@ -6,7 +6,7 @@ inputs:
     description: "Path to the benchmark output file"
     required: true
   type:
-    description: "Parser type (pytest-7.3.0, pyperf-2.7.0, ...)"
+    description: "Parser type (pytest@7.3.0, pyperf@2.7.0, ...)"
     required: true
   github_token:
     description: "GitHub token for saving performance test data to parallel Git tree"

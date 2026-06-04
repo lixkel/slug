@@ -1,3 +1,29 @@
+// Naming convention
+// -----------------
+// Function name:  <library>_<major>_<minor>_<patch>    This is a Rust
+//                 identifier, so hyphens become underscores, e.g.
+//                 google_benchmark_1_8_3). The version is *minimum* library
+//                 version the parser supports, The parser registry in
+//                 parser.rs picks the closest parser whose version is <=
+//                 than the one requsted.
+//
+// Registry key /  "name@version"   (e.g. `-t google-benchmark@1.8.3`) The name
+// CLI flag:       keeps the library's name spelling and may contain hyphens,
+//                 only the '@' separates name and version. Use the bare
+//                 library name when it is distinctive (pytest, pyperf,
+//                 criterion). Add language prefix only when the library's own
+//                 name is generic (Go's `testing` -> `go-testing`).
+//
+// Metric convention
+// -----------------
+// Every metric must be stored through PerfData::record, which normalizes the
+// value into nanoseconds via the unit registry. Never insert into the map
+// directly. Always emit a "mean" key: the statistical tests (z-score, EWMA)
+// depend on it. Save every metric the tool prints (lower, upper, stddev, ...),
+// as there might be statistical tests in the future which could use them.
+//
+// Parser must fail loudly e.g. Err(Parsing("No matches found")).
+
 use crate::git;
 use crate::parser::PerfData;
 use crate::errors::SlugError;
