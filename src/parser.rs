@@ -141,7 +141,8 @@ pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<Vec<PerfData>, Sl
     add_libs!(parsers, {
         "pytest" => [(pytest_7_3_0, "7.3.0")],
         "pyperf" => [(pyperf_2_7_0, "2.7.0")],
-        "go_testing" => [(go_testing_1_26_4, "1.26.4")]
+        "go_testing" => [(go_testing_1_26_4, "1.26.4")],
+        "criterion" => [(criterion_0_5_1, "0.5.1")]
     });
 
     let versions = parsers.get(&lib.name)
@@ -226,6 +227,34 @@ fn go_testing_1_26_4(s: &str) -> Result<Vec<PerfData>, SlugError> {
         let value: f64 = found["value"].parse()?;
 
         data.record("mean", value, &found["unit"])?;
+
+        results.push(data);
+    }
+
+    if results.is_empty() {
+        return Err(SlugError::Parsing("No matches found".to_string()));
+    }
+
+    Ok(results)
+}
+
+fn criterion_0_5_1(s: &str) -> Result<Vec<PerfData>, SlugError> {
+    // criterion prints confidence interval per benchmark:
+    //   fib                     time:   [22.624 µs 22.702 µs 22.775 µs]
+    // The numbers are lower bound, point estimate, upper bound
+    let regex = Regex::new(
+        r"(?m)^(?P<name>\w+)\s+time:\s+\[(?P<low>[\d.]+) (?P<lowunit>\S+) (?P<mid>[\d.]+) (?P<midunit>\S+) (?P<high>[\d.]+) (?P<highunit>\S+)\]"
+    )?;
+
+    let commit_hash = git::get_commit_hash()?;
+    let mut results = Vec::new();
+
+    for found in regex.captures_iter(s) {
+        let mut data = PerfData::new(&found["name"], &commit_hash);
+
+        data.record("lower", found["low"].parse()?, &found["lowunit"])?;
+        data.record("mean", found["mid"].parse()?, &found["midunit"])?;
+        data.record("upper", found["high"].parse()?, &found["highunit"])?;
 
         results.push(data);
     }
