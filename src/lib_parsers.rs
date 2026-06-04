@@ -125,6 +125,33 @@ pub fn criterion_0_5_1(s: &str) -> Result<Vec<PerfData>, SlugError> {
     Ok(results)
 }
 
+pub fn google_benchmark_1_8_3(s: &str) -> Result<Vec<PerfData>, SlugError> {
+    // google-benchmark prints all the data on one line per benchmark:
+    //  BM_Fib          12194 ns        12150 ns        55767
+    // columns are name, Time, CPU, Iterations
+    let regex = Regex::new(
+        r"(?m)^(?P<name>\S+)\s+(?P<time>[\d.]+)\s+(?P<tunit>\w+)\s+(?P<cpu>[\d.]+)\s+(?P<cunit>\w+)\s+\d+\s*$"
+    )?;
+
+    let commit_hash = git::get_commit_hash()?;
+    let mut results = Vec::new();
+
+    for found in regex.captures_iter(s) {
+        let mut data = PerfData::new(&found["name"], &commit_hash);
+
+        data.record("mean", found["time"].parse()?, &found["tunit"])?;
+        data.record("cpu", found["cpu"].parse()?, &found["cunit"])?;
+
+        results.push(data);
+    }
+
+    if results.is_empty() {
+        return Err(SlugError::Parsing("No matches found".to_string()));
+    }
+
+    Ok(results)
+}
+
 pub fn pyperf_2_7_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
     // pyperf scales unit per benchmark (line), so the unit must be read from each line
     // mean and stddev each carry their own unit
