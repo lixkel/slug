@@ -8,6 +8,8 @@ use crate::errors::SlugError;
 const SHARED_REF: &str = "refs/heads/slug";
 // Local history, ref outside refs/heads so it is never pushed
 const LOCAL_REF: &str = "refs/slug-local/slug";
+// Notes attached to evaluated commits, pointing to the slug data commit
+const NOTES_REF: &str = "refs/notes/slug";
 
 pub struct SlugGit {
     pub repo: git2::Repository,
@@ -215,5 +217,28 @@ pub fn get_commit_hash() -> Result<String, SlugError> {
     let head = repo.head()?;
     let commit = head.peel_to_commit()?;
     Ok(commit.id().to_string())
+}
+
+// Remove every ref Slug created: the shared branch, the local history, and the
+// notes. Deleting a ref drops its commits/blobs from the ref graph; the objects
+// stay in the database until Git garbage collects them. Returns the names of
+// the refs that were present and deleted so the caller can report them.
+pub fn clean() -> Result<Vec<String>, SlugError> {
+    let repo = git2::Repository::discover(".")?;
+    let mut removed = Vec::new();
+
+    for refname in [SHARED_REF, LOCAL_REF, NOTES_REF] {
+        match repo.find_reference(refname) {
+            Ok(mut reference) => {
+                reference.delete()?;
+                removed.push(refname.to_string());
+            }
+            // Already absent, nothing to remove
+            Err(ref e) if e.code() == git2::ErrorCode::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
+
+    Ok(removed)
 }
 

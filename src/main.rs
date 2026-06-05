@@ -14,6 +14,10 @@ use errors::SlugError;
 fn main() -> Result<(), SlugError> {
     let options = cli::parse_args()?;
 
+    if let Some(subcommand) = options.subcommand.as_deref() {
+        return run_subcommand(subcommand);
+    }
+
     let reader = cli::get_reader(&options.file)?;
 
     let lib_str = options.library_type.as_ref().ok_or_else(|| SlugError::Cli("Missing mandatory option -t".to_string()))?;
@@ -49,4 +53,19 @@ fn main() -> Result<(), SlugError> {
     statistics::calculate_stats(&window, &options)?;
 
     Ok(())
+}
+
+fn run_subcommand(subcommand: &str) -> Result<(), SlugError> {
+    match subcommand {
+        "clean" => {
+            let removed = git::clean()?;
+            if removed.is_empty() {
+                println!("Nothing to clean, no slug data found");
+            } else {
+                println!("Cleaning successful");
+            }
+            Ok(())
+        }
+        _ => Err(SlugError::Cli(format!("Unknown subcommand '{}'", subcommand))),
+    }
 }
