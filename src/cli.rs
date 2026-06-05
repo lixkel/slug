@@ -10,6 +10,8 @@ pub struct CliOptions {
     pub file: Option<String>,
     pub library_type: Option<String>,
     pub amend: bool,
+    pub local: bool,
+    pub shared: bool,
     pub subcommand: Option<String>,
     pub zscore_threshold: f64,
     pub ewma_alpha: f64,
@@ -21,7 +23,7 @@ pub enum PerfDataReader {
 }
 
 fn print_usage(program: &str, opts: Options) {
-    let brief = format!("Usage: {} -t LIBRARY [-f FILE] [--zscore THRESHOLD] [--ewma ALPHA]", program);
+    let brief = format!("Usage: {} -t LIBRARY [-f FILE] [--local | --shared] [--zscore THRESHOLD] [--ewma ALPHA]", program);
     print!("{}", opts.usage(&brief));
 }
 
@@ -41,6 +43,8 @@ pub fn parse_args() -> Result<CliOptions, SlugError> {
     opts.optopt("f", "file", "set input file name", "FILENAME");
     opts.optopt("t", "type", "set library type", "LIBRARY");
     opts.optflag("a", "amend", "store records in current branch using commit amend");
+    opts.optflag("l", "local", "store records locally");
+    opts.optflag("s", "shared", "store records to shared git history (slug branch)");
     opts.optopt("", "zscore", "set z-score anomaly threshold (default: 3.0)", "FLOAT");
     opts.optopt("", "ewma", "set ewma smoothing factor alpha (default: 0.2)", "FLOAT");
     opts.optflag("h", "help", "print this help menu");
@@ -56,6 +60,12 @@ pub fn parse_args() -> Result<CliOptions, SlugError> {
     let file = matches.opt_str("f");
     let library_type = matches.opt_str("t");
     let amend = matches.opt_present("a");
+    let local = matches.opt_present("l");
+    let shared = matches.opt_present("s");
+
+    if [amend, local, shared].iter().filter(|&&x| x).count() > 1 {
+        return Err(SlugError::Cli("Use at most one of --amend, --local, --shared".to_string()));
+    }
 
     let zscore_threshold = match matches.opt_str("zscore") {
         Some(val) => val.parse::<f64>().map_err(|_| SlugError::Cli("Invalid float for zscore".to_string()))?,
@@ -76,6 +86,8 @@ pub fn parse_args() -> Result<CliOptions, SlugError> {
         file,
         library_type,
         amend,
+        local,
+        shared,
         subcommand,
         zscore_threshold,
         ewma_alpha,

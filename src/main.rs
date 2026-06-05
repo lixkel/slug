@@ -21,25 +21,32 @@ fn main() -> Result<(), SlugError> {
 
     let data = parser::parse(reader, &lib)?;
 
-    /*
-        match statistics::calculate_stats(&mut data) {
-        Ok(_) => {},
-        Err(e) => panic!("Error occurred while parsing: {}", e),
-    };
-    */
+    let name = data[0].name.clone();
+    const BASELINE: usize = 3;
 
-    let ldata;
-    let slug_git = git::SlugGit::new()?;
-
-    if options.amend {
-        dbm_amend::insert(&slug_git, &data)?;
-        ldata = dbm_amend::get_latest_n(&data[0].name, 3)?;
+    let window = if options.shared {
+        let mut baseline = dbm_git::get_latest_n(dbm_git::Store::Shared, &name, BASELINE)?;
+        dbm_git::insert(dbm_git::Store::Shared, &data)?;
+        println!("Recorded to shared git history (refs/heads/slug)");
+        baseline.push(data.into_iter().next().unwrap());
+        baseline
+    } else if options.local {
+        let mut baseline = dbm_git::get_latest_n(dbm_git::Store::Local, &name, BASELINE)?;
+        dbm_git::insert(dbm_git::Store::Local, &data)?;
+        println!("Recorded to local history (refs/slug-local)");
+        baseline.push(data.into_iter().next().unwrap());
+        baseline
+    } else if options.amend {
+        dbm_amend::insert(&data)?;
+        dbm_amend::get_latest_n(&name, BASELINE)?
     } else {
-        dbm_git::insert(&slug_git, &data)?;
-        ldata = dbm_git::get_latest_n(&slug_git, &data[0].name, 3)?;
-    }
+        println!("Dry run, nothing written (use --local or --shared to record)");
+        let mut baseline = dbm_git::get_latest_n(dbm_git::Store::Local, &name, BASELINE)?;
+        baseline.push(data.into_iter().next().unwrap());
+        baseline
+    };
 
-    statistics::calculate_stats(&ldata, &options)?;
+    statistics::calculate_stats(&window, &options)?;
 
     Ok(())
-    }
+}

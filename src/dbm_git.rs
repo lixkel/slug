@@ -6,11 +6,38 @@ use std::io::{BufReader, Cursor};
 use crate::errors::SlugError;
 
 
+// Which history to use for read/write
+pub enum Store {
+    Shared,
+    Local,
+}
+
+impl Store {
+    // Writable, creates the ref if missing
+    fn open_write(&self) -> Result<SlugGit, SlugError> {
+        match self {
+            Store::Shared => SlugGit::shared(),
+            Store::Local => SlugGit::local(),
+        }
+    }
+
+    // Readonly, doesn't create ref if missing
+    fn open_read(&self) -> Result<SlugGit, SlugError> {
+        match self {
+            Store::Shared => SlugGit::open_shared(),
+            Store::Local => SlugGit::open_local(),
+        }
+    }
+}
+
+
 // TODO: dont checkout just write directly the data to branch
-pub fn insert(slug_git: &SlugGit, data: &Vec<PerfData>) -> Result<(), SlugError> {
+pub fn insert(store: Store, data: &Vec<PerfData>) -> Result<(), SlugError> {
     if data.is_empty() {
         return Ok(());
     }
+
+    let slug_git = store.open_write()?;
 
     let mut updates = Vec::new();
     let commit_hash = &data[0].commit_hash;
@@ -33,8 +60,15 @@ pub fn insert(slug_git: &SlugGit, data: &Vec<PerfData>) -> Result<(), SlugError>
 }
 
 
-pub fn get_latest_n(slug_git: &SlugGit, name: &String, n: usize) -> Result<Vec<PerfData>, SlugError> {
-    let cursor = Cursor::new(slug_git.read_file_slug(&name)?);
+pub fn get_latest_n(store: Store, name: &String, n: usize) -> Result<Vec<PerfData>, SlugError> {
+    let slug_git = store.open_read()?;
+
+    // Check if historical data exists for this test
+    if !slug_git.file_exists(name)? {
+        return Ok(Vec::new());
+    }
+
+    let cursor = Cursor::new(slug_git.read_file_slug(name)?);
     let reader = BufReader::new(cursor);
 
     // TODO: think about if i should not only get one data point from each checkout

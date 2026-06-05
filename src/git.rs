@@ -4,64 +4,83 @@ use std::fs;
 use crate::errors::SlugError;
 
 
+// Shared history, orphan branch pushed in CI
+const SHARED_REF: &str = "refs/heads/slug";
+// Local history, ref outside refs/heads so it is never pushed
+const LOCAL_REF: &str = "refs/slug-local/slug";
+
 pub struct SlugGit {
     pub repo: git2::Repository,
-    pub slug_branch_ref: String,
+    pub slug_ref: String,
 }
 
 
 impl SlugGit {
-    pub fn new() -> Result<Self, SlugError> {
-        let repo = git2::Repository::discover(".")?;
-
-        let instance = Self {
-            repo: repo,
-            slug_branch_ref: "refs/heads/slug".to_string(),
-        };
-        instance.ensure_branch_exists("slug")?;
-        
+    // Shared history handle (creates the branch if missing)
+    pub fn shared() -> Result<Self, SlugError> {
+        let instance = Self::open(SHARED_REF)?;
+        instance.ensure_ref_exists()?;
         Ok(instance)
     }
 
-    pub fn branch_exists(&self, branch_name: &str) -> Result<bool, SlugError> {
-        match self.repo.find_branch(branch_name, git2::BranchType::Local) {
+    // Local history handle (creates the ref if missing)
+    pub fn local() -> Result<Self, SlugError> {
+        let instance = Self::open(LOCAL_REF)?;
+        instance.ensure_ref_exists()?;
+        Ok(instance)
+    }
+
+    // Readonly handle to local history
+    pub fn open_local() -> Result<Self, SlugError> {
+        Self::open(LOCAL_REF)
+    }
+
+    // Readonly handle to the shared history
+    pub fn open_shared() -> Result<Self, SlugError> {
+        Self::open(SHARED_REF)
+    }
+
+    fn open(slug_ref: &str) -> Result<Self, SlugError> {
+        let repo = git2::Repository::discover(".")?;
+        Ok(Self { repo, slug_ref: slug_ref.to_string() })
+    }
+
+    pub fn ref_exists(&self) -> Result<bool, SlugError> {
+        match self.repo.find_reference(&self.slug_ref) {
             Ok(_) => Ok(true),
             Err(ref e) if e.code() == git2::ErrorCode::NotFound => Ok(false),
             Err(e) => Err(e.into()),
         }
     }
 
-
-    pub fn create_branch(&self, branch_name: &str) -> Result<(), SlugError> {
+    pub fn create_ref(&self) -> Result<(), SlugError> {
         let treebuilder = self.repo.treebuilder(None)?;
         let tree_oid = treebuilder.write()?;
         let tree = self.repo.find_tree(tree_oid)?;
 
         let sig = git2::Signature::now("Slug", "slug@slug.internal").map_err(|e| SlugError::Git(e))?;
-        
+
         self.repo.commit(
-            Some(&format!("refs/heads/{}", branch_name)),
+            Some(&self.slug_ref),
             &sig,
             &sig,
             "Initial slug commit",
             &tree,
             &[],
         )?;
-        
+
         Ok(())
     }
 
-
-    pub fn ensure_branch_exists(&self, branch_name: &str) -> Result<(), SlugError> {
-        if !self.branch_exists(branch_name)? {
-            self.create_branch(branch_name)?;
+    pub fn ensure_ref_exists(&self) -> Result<(), SlugError> {
+        if !self.ref_exists()? {
+            self.create_ref()?;
         }
         Ok(())
     }
 
     pub fn edit_branch_slug(&self, commit_hash: &str, updates: &[(String, String)]) -> Result<String, SlugError> {
-        let branch_ref = format!("refs/heads/slug");
-        let branch = self.repo.find_reference(&branch_ref)?;
+        let branch = self.repo.find_reference(&self.slug_ref)?;
         let branch_commit = branch.peel_to_commit()?;
 
         // Prepare TreeBuilder and write test_data to the test_name file
@@ -97,7 +116,7 @@ impl SlugGit {
         );
 
         let new_commit_oid = self.repo.commit(
-            Some(&branch_ref),
+            Some(&self.slug_ref),
             &sig,
             &sig,
             &message,
@@ -124,9 +143,8 @@ impl SlugGit {
         Ok(())
     }
 
-
     pub fn read_file_slug(&self, file_path: &String) -> Result<Vec<u8>, SlugError> {
-        let branch = self.repo.find_reference(&self.slug_branch_ref)?;
+        let branch = self.repo.find_reference(&self.slug_ref)?;
         let branch_commit = branch.peel_to_commit()?;
         let tree = branch_commit.tree()?;
 
@@ -136,10 +154,13 @@ impl SlugGit {
         Ok(blob.content().to_vec())
     }
 
-
-    pub fn file_exists(&self, file_path: &String) -> Result<bool, SlugError> {    
-        let branch_ref = format!("refs/heads/slug");
-        let branch = self.repo.find_reference(&branch_ref)?;
+    pub fn file_exists(&self, file_path: &String) -> Result<bool, SlugError> {
+        // Missing ref = no history
+        let branch = match self.repo.find_reference(&self.slug_ref) {
+            Ok(branch) => branch,
+            Err(ref e) if e.code() == git2::ErrorCode::NotFound => return Ok(false),
+            Err(e) => return Err(e.into()),
+        };
         let branch_commit = branch.peel_to_commit()?;
         let tree = branch_commit.tree()?;
 
@@ -149,7 +170,6 @@ impl SlugGit {
             Err(_) => Ok(false),
         }
     }
-
 
     fn add_all_in_dir(index: &mut git2::Index, dir: &Path) -> Result<(), SlugError> {
         for entry in fs::read_dir(dir)? {
@@ -163,7 +183,6 @@ impl SlugGit {
         }
         Ok(())
     }
-    
 
     pub fn amend_slug(&self) -> Result<(), SlugError> {
         let head = self.repo.head()?;
