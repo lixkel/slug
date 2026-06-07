@@ -14,8 +14,8 @@ use errors::SlugError;
 fn main() -> Result<(), SlugError> {
     let options = cli::parse_args()?;
 
-    if let Some(subcommand) = options.subcommand.as_deref() {
-        return run_subcommand(subcommand);
+    if options.subcommand.is_some() {
+        return run_subcommand(&options);
     }
 
     let reader = cli::get_reader(&options.file)?;
@@ -55,7 +55,8 @@ fn main() -> Result<(), SlugError> {
     Ok(())
 }
 
-fn run_subcommand(subcommand: &str) -> Result<(), SlugError> {
+fn run_subcommand(options: &cli::CliOptions) -> Result<(), SlugError> {
+    let subcommand = options.subcommand.as_deref().unwrap_or("");
     match subcommand {
         "clean" => {
             let removed = git::clean()?;
@@ -63,6 +64,29 @@ fn run_subcommand(subcommand: &str) -> Result<(), SlugError> {
                 println!("Nothing to clean, no slug data found");
             } else {
                 println!("Cleaning successful");
+            }
+            Ok(())
+        }
+        "history" => {
+            let store = if options.local {
+                dbm_git::Store::Local
+            } else {
+                dbm_git::Store::Shared
+            };
+
+            let exports = dbm_git::export(store, options.target.as_deref())?;
+            if exports.is_empty() {
+                println!("No history found");
+                return Ok(());
+            }
+
+            // One block per test, separated by blank line, each test marked "# name"
+            for (i, (name, content)) in exports.iter().enumerate() {
+                if i > 0 {
+                    println!();
+                }
+                println!("# {}", name);
+                print!("{}", content);
             }
             Ok(())
         }

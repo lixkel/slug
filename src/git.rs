@@ -156,6 +156,25 @@ impl SlugGit {
         Ok(blob.content().to_vec())
     }
 
+    // Names of every test file stored in slug tree
+    pub fn list_files(&self) -> Result<Vec<String>, SlugError> {
+        // Missing ref = no history
+        let branch = match self.repo.find_reference(&self.slug_ref) {
+            Ok(branch) => branch,
+            Err(ref e) if e.code() == git2::ErrorCode::NotFound => return Ok(Vec::new()),
+            Err(e) => return Err(e.into()),
+        };
+        let tree = branch.peel_to_commit()?.tree()?;
+
+        let mut names = Vec::new();
+        for entry in tree.iter() {
+            if let Some(name) = entry.name() {
+                names.push(name.to_string());
+            }
+        }
+        Ok(names)
+    }
+
     pub fn file_exists(&self, file_path: &String) -> Result<bool, SlugError> {
         // Missing ref = no history
         let branch = match self.repo.find_reference(&self.slug_ref) {

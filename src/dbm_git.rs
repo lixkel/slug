@@ -74,3 +74,30 @@ pub fn get_latest_n(store: Store, name: &String, n: usize) -> Result<Vec<PerfDat
     // TODO: think about if i should not only get one data point from each checkout
     dbm_csv::get_latest_n(reader, name, n)
 }
+
+
+// Dump stored CSV data for export. If target is None data for all tests are exported
+// Returns (test_name, raw_csv)
+pub fn export(store: Store, target: Option<&str>) -> Result<Vec<(String, String)>, SlugError> {
+    let slug_git = store.open_read()?;
+
+    let names = match target {
+        Some(name) => {
+            let name = name.to_string();
+            if !slug_git.file_exists(&name)? {
+                return Err(SlugError::Parsing(format!("No history for test '{}'", name)));
+            }
+            vec![name]
+        }
+        None => slug_git.list_files()?,
+    };
+
+    let mut exports = Vec::new();
+    for name in names {
+        let content = String::from_utf8(slug_git.read_file_slug(&name)?)
+            .map_err(|e| SlugError::Parsing(e.to_string()))?;
+        exports.push((name, content));
+    }
+
+    Ok(exports)
+}

@@ -13,6 +13,7 @@ pub struct CliOptions {
     pub local: bool,
     pub shared: bool,
     pub subcommand: Option<String>,
+    pub target: Option<String>,
     pub zscore_threshold: f64,
     pub ewma_alpha: f64,
 }
@@ -23,7 +24,10 @@ pub enum PerfDataReader {
 }
 
 fn print_usage(program: &str, opts: Options) {
-    let brief = format!("Usage: {} -t LIBRARY [-f FILE] [--local | --shared] [--zscore THRESHOLD] [--ewma ALPHA]", program);
+    let brief = format!(
+        "Usage: {prog} -t LIBRARY [-f FILE] [--local | --shared] [--zscore THRESHOLD] [--ewma ALPHA]\n       {prog} history [TEST] [--local]\n       {prog} clean",
+        prog = program
+    );
     print!("{}", opts.usage(&brief));
 }
 
@@ -34,7 +38,7 @@ pub fn parse_args() -> Result<CliOptions, SlugError> {
     let subcommand = if args.len() > 1 && !args[1].starts_with('-') {
         let subcommand = args[1].clone();
         match subcommand.as_str() {
-            "clean" => Some(subcommand),
+            "clean" | "history" => Some(subcommand),
             _ => None,
         }
     } else { None };
@@ -63,6 +67,9 @@ pub fn parse_args() -> Result<CliOptions, SlugError> {
     let local = matches.opt_present("l");
     let shared = matches.opt_present("s");
 
+    // Positional argument (test name in `slug history fib32`)
+    let target = matches.free.first().cloned();
+
     if [amend, local, shared].iter().filter(|&&x| x).count() > 1 {
         return Err(SlugError::Cli("Use at most one of --amend, --local, --shared".to_string()));
     }
@@ -89,6 +96,7 @@ pub fn parse_args() -> Result<CliOptions, SlugError> {
         local,
         shared,
         subcommand,
+        target,
         zscore_threshold,
         ewma_alpha,
     })
