@@ -27,23 +27,27 @@ fn main() -> Result<(), SlugError> {
     let name = data[0].name.clone();
     const BASELINE: usize = 3;
 
-    let window = if options.shared {
-        let mut baseline = dbm_git::get_latest_n(dbm_git::Store::Shared, &name, BASELINE)?;
-        dbm_git::insert(dbm_git::Store::Shared, &data)?;
-        println!("Recorded to shared git history (refs/heads/slug)");
-        baseline.push(data.into_iter().next().unwrap());
-        baseline
-    } else if options.local {
-        let mut baseline = dbm_git::get_latest_n(dbm_git::Store::Local, &name, BASELINE)?;
-        dbm_git::insert(dbm_git::Store::Local, &data)?;
-        println!("Recorded to local history (refs/slug-local)");
-        baseline.push(data.into_iter().next().unwrap());
-        baseline
-    } else {
-        println!("Dry run, nothing written (use --local or --shared to record)");
-        let mut baseline = dbm_git::get_latest_n(dbm_git::Store::Local, &name, BASELINE)?;
-        baseline.push(data.into_iter().next().unwrap());
-        baseline
+    let window = match options.mode {
+        cli::Mode::Shared => {
+            let mut baseline = dbm_git::get_latest_n(dbm_git::Store::Shared, &name, BASELINE)?;
+            dbm_git::insert(dbm_git::Store::Shared, &data)?;
+            println!("Recorded to shared git history (refs/heads/slug)");
+            baseline.push(data.into_iter().next().unwrap());
+            baseline
+        }
+        cli::Mode::Local => {
+            let mut baseline = dbm_git::get_latest_n(dbm_git::Store::Local, &name, BASELINE)?;
+            dbm_git::insert(dbm_git::Store::Local, &data)?;
+            println!("Recorded to local history (refs/slug-local)");
+            baseline.push(data.into_iter().next().unwrap());
+            baseline
+        }
+        cli::Mode::DryRun => {
+            println!("Dry run, nothing written (use --local or --shared to record)");
+            let mut baseline = dbm_git::get_latest_n(dbm_git::Store::Local, &name, BASELINE)?;
+            baseline.push(data.into_iter().next().unwrap());
+            baseline
+        }
     };
 
     statistics::calculate_stats(&window, &options)?;
@@ -64,10 +68,9 @@ fn run_subcommand(options: &cli::CliOptions) -> Result<(), SlugError> {
             Ok(())
         }
         "history" => {
-            let store = if options.local {
-                dbm_git::Store::Local
-            } else {
-                dbm_git::Store::Shared
+            let store = match options.mode {
+                cli::Mode::Local => dbm_git::Store::Local,
+                _ => dbm_git::Store::Shared,
             };
 
             let exports = dbm_git::export(store, options.target.as_deref())?;

@@ -6,11 +6,17 @@ use getopts::Options;
 use std::env;
 use crate::errors::SlugError;
 
+// Where to save the data from current run / where to look for history
+pub enum Mode {
+    DryRun,
+    Local,
+    Shared,
+}
+
 pub struct CliOptions {
     pub file: Option<String>,
     pub library_type: Option<String>,
-    pub local: bool,
-    pub shared: bool,
+    pub mode: Mode,
     pub subcommand: Option<String>,
     pub target: Option<String>,
     pub zscore_threshold: f64,
@@ -67,9 +73,12 @@ pub fn parse_args() -> Result<CliOptions, SlugError> {
     // Positional argument (test name in `slug history fib32`)
     let target = matches.free.first().cloned();
 
-    if local && shared {
-        return Err(SlugError::Cli("Use at most one of --local, --shared".to_string()));
-    }
+    let mode = match (local, shared) {
+        (false, false) => Mode::DryRun,
+        (true, false) => Mode::Local,
+        (false, true) => Mode::Shared,
+        (true, true) => return Err(SlugError::Cli("Use at most one of --local, --shared".to_string())),
+    };
 
     let zscore_threshold = match matches.opt_str("zscore") {
         Some(val) => val.parse::<f64>().map_err(|_| SlugError::Cli("Invalid float for zscore".to_string()))?,
@@ -89,8 +98,7 @@ pub fn parse_args() -> Result<CliOptions, SlugError> {
     Ok(CliOptions {
         file,
         library_type,
-        local,
-        shared,
+        mode,
         subcommand,
         target,
         zscore_threshold,
