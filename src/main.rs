@@ -58,37 +58,34 @@ fn main() -> Result<(), SlugError> {
 fn run_subcommand(options: &cli::CliOptions) -> Result<(), SlugError> {
     let subcommand = options.subcommand.as_deref().unwrap_or("");
     match subcommand {
-        "clean" => {
-            let removed = git::clean()?;
-            if removed.is_empty() {
-                println!("Nothing to clean, no slug data found");
-            } else {
-                println!("Cleaning successful");
-            }
-            Ok(())
-        }
-        "history" => {
-            let store = match options.mode {
-                cli::Mode::Local => dbm_git::Store::Local,
-                _ => dbm_git::Store::Shared,
-            };
-
-            let exports = dbm_git::export(store, options.target.as_deref())?;
-            if exports.is_empty() {
-                println!("No history found");
-                return Ok(());
-            }
-
-            // One block per test, separated by blank line, each test marked "# name"
-            for (i, (name, content)) in exports.iter().enumerate() {
-                if i > 0 {
-                    println!();
-                }
-                println!("# {}", name);
-                print!("{}", content);
-            }
-            Ok(())
-        }
+        "clean" => clean(),
+        "history" => history(options),
         _ => Err(SlugError::Cli(format!("Unknown subcommand '{}'", subcommand))),
     }
+}
+
+fn clean() -> Result<(), SlugError> {
+    let removed = git::clean()?;
+    if removed.is_empty() {
+        println!("Nothing to clean, no slug data found");
+    } else {
+        println!("Cleaning successful");
+    }
+    Ok(())
+}
+
+fn history(options: &cli::CliOptions) -> Result<(), SlugError> {
+    let store = match options.mode {
+        cli::Mode::Local => dbm_git::Store::Local,
+        _ => dbm_git::Store::Shared,
+    };
+
+    let exports = dbm_git::export(store, options.target.as_deref())?;
+    if exports.is_empty() {
+        println!("No history found");
+        return Ok(());
+    }
+
+    print!("{}", dbm_csv::format_export(&exports));
+    Ok(())
 }

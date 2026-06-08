@@ -8,6 +8,20 @@ use crate::errors::SlugError;
 use std::io::Read;
 
 
+// Render exported (test_name, raw_csv) separated by "# name" and blank line
+pub fn format_export(exports: &[(String, String)]) -> String {
+    let mut out = String::new();
+    for (i, (name, content)) in exports.iter().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        out.push_str(&format!("# {}\n", name));
+        out.push_str(content);
+    }
+    out
+}
+
+
 pub fn get_data_entry_string<W: std::io::Write>(mut writer: Writer<W>, data: &PerfData, file_exists: bool) -> Result<(), SlugError> {
     // Sort keys
     let mut keys: Vec<&String> = data.map.keys().collect();

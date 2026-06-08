@@ -200,10 +200,8 @@ pub fn get_commit_hash() -> Result<String, SlugError> {
     Ok(commit.id().to_string())
 }
 
-// Remove every ref Slug created: the shared branch, the local history, and the
-// notes. Deleting a ref drops its commits/blobs from the ref graph; the objects
-// stay in the database until Git garbage collects them. Returns the names of
-// the refs that were present and deleted so the caller can report them.
+// Clean every trace after Slug, shared history, local history, notes
+// Deleting ref drops its commits from the graph and git garbage collects them
 pub fn clean() -> Result<Vec<String>, SlugError> {
     let repo = git2::Repository::discover(".")?;
     let mut removed = Vec::new();
@@ -214,7 +212,7 @@ pub fn clean() -> Result<Vec<String>, SlugError> {
                 reference.delete()?;
                 removed.push(refname.to_string());
             }
-            // Already absent, nothing to remove
+            // Missing, nothing to remove
             Err(ref e) if e.code() == git2::ErrorCode::NotFound => {}
             Err(e) => return Err(e.into()),
         }
