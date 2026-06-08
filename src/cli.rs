@@ -9,7 +9,6 @@ use crate::errors::SlugError;
 pub struct CliOptions {
     pub file: Option<String>,
     pub library_type: Option<String>,
-    pub amend: bool,
     pub local: bool,
     pub shared: bool,
     pub subcommand: Option<String>,
@@ -46,7 +45,6 @@ pub fn parse_args() -> Result<CliOptions, SlugError> {
     let mut opts = Options::new();
     opts.optopt("f", "file", "set input file name", "FILENAME");
     opts.optopt("t", "type", "set library type", "LIBRARY");
-    opts.optflag("a", "amend", "store records in current branch using commit amend");
     opts.optflag("l", "local", "store records locally");
     opts.optflag("s", "shared", "store records to shared git history (slug branch)");
     opts.optopt("", "zscore", "set z-score anomaly threshold (default: 3.0)", "FLOAT");
@@ -63,15 +61,14 @@ pub fn parse_args() -> Result<CliOptions, SlugError> {
 
     let file = matches.opt_str("f");
     let library_type = matches.opt_str("t");
-    let amend = matches.opt_present("a");
     let local = matches.opt_present("l");
     let shared = matches.opt_present("s");
 
     // Positional argument (test name in `slug history fib32`)
     let target = matches.free.first().cloned();
 
-    if [amend, local, shared].iter().filter(|&&x| x).count() > 1 {
-        return Err(SlugError::Cli("Use at most one of --amend, --local, --shared".to_string()));
+    if local && shared {
+        return Err(SlugError::Cli("Use at most one of --local, --shared".to_string()));
     }
 
     let zscore_threshold = match matches.opt_str("zscore") {
@@ -92,7 +89,6 @@ pub fn parse_args() -> Result<CliOptions, SlugError> {
     Ok(CliOptions {
         file,
         library_type,
-        amend,
         local,
         shared,
         subcommand,

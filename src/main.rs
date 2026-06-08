@@ -6,7 +6,6 @@ mod units;
 mod statistics;
 mod dbm_csv;
 mod dbm_git;
-mod dbm_amend;
 mod errors;
 
 use errors::SlugError;
@@ -40,9 +39,6 @@ fn main() -> Result<(), SlugError> {
         println!("Recorded to local history (refs/slug-local)");
         baseline.push(data.into_iter().next().unwrap());
         baseline
-    } else if options.amend {
-        dbm_amend::insert(&data)?;
-        dbm_amend::get_latest_n(&name, BASELINE)?
     } else {
         println!("Dry run, nothing written (use --local or --shared to record)");
         let mut baseline = dbm_git::get_latest_n(dbm_git::Store::Local, &name, BASELINE)?;

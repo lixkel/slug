@@ -1,6 +1,5 @@
 use git2;
 use std::path::Path;
-use std::fs;
 use crate::errors::SlugError;
 
 
@@ -192,43 +191,6 @@ impl SlugGit {
         }
     }
 
-    fn add_all_in_dir(index: &mut git2::Index, dir: &Path) -> Result<(), SlugError> {
-        for entry in fs::read_dir(dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_dir() {
-                Self::add_all_in_dir(index, &path)?;
-            } else {
-                index.add_path(&path)?;
-            }
-        }
-        Ok(())
-    }
-
-    pub fn amend_slug(&self) -> Result<(), SlugError> {
-        let head = self.repo.head()?;
-        let commit = head.peel_to_commit()?;
-
-        // TODO: fixissue: if anything was added before it will be commited, maybe just remove amend
-        let mut index = self.repo.index()?;
-        let slug_path = Path::new(".slug");
-        Self::add_all_in_dir(&mut index, slug_path)?;
-        index.write()?;
-        
-        let tree_id = index.write_tree()?;
-        let tree = self.repo.find_tree(tree_id)?;
-    
-        commit.amend(
-            Some("HEAD"),
-            None,
-            None,
-            None,
-            None,
-            Some(&tree)
-        )?;
-        
-        Ok(())
-    }
 }
 
 pub fn get_commit_hash() -> Result<String, SlugError> {
