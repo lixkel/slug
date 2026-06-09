@@ -27,28 +27,26 @@ fn main() -> Result<(), SlugError> {
     let name = data[0].name.clone();
     const BASELINE: usize = 3;
 
-    let window = match options.mode {
-        cli::Mode::Shared => {
-            let mut baseline = dbm_git::get_latest_n(dbm_git::Store::Shared, &name, BASELINE)?;
-            dbm_git::insert(dbm_git::Store::Shared, &data)?;
-            println!("Recorded to shared git history (refs/slug/shared)");
-            baseline.push(data.into_iter().next().unwrap());
-            baseline
-        }
-        cli::Mode::Local => {
-            let mut baseline = dbm_git::get_latest_n(dbm_git::Store::Local, &name, BASELINE)?;
-            dbm_git::insert(dbm_git::Store::Local, &data)?;
-            println!("Recorded to local history (refs/slug-local)");
-            baseline.push(data.into_iter().next().unwrap());
-            baseline
-        }
-        cli::Mode::DryRun => {
-            println!("Dry run, nothing written (use --local or --shared to record)");
-            let mut baseline = dbm_git::get_latest_n(dbm_git::Store::Local, &name, BASELINE)?;
-            baseline.push(data.into_iter().next().unwrap());
-            baseline
-        }
+    // Open repo slug was called in
+    let slug_git = if options.write {
+        options.storage.open_write()?
+    } else {
+        options.storage.open_read()?
     };
+
+    let mut window = dbm_git::get_latest_n(&slug_git, &name, BASELINE)?;
+
+    if options.write {
+        dbm_git::insert(&slug_git, &data)?;
+        match options.storage {
+            dbm_git::Store::Shared => println!("Recorded to shared git history (refs/slug/shared)"),
+            dbm_git::Store::Local => println!("Recorded to local history (refs/slug-local)"),
+        }
+    } else {
+        println!("Dry run, nothing written (use --record to store)");
+    }
+
+    window.push(data.into_iter().next().unwrap());
 
     statistics::calculate_stats(&window, &options)?;
 
@@ -75,12 +73,8 @@ fn clean() -> Result<(), SlugError> {
 }
 
 fn history(options: &cli::CliOptions) -> Result<(), SlugError> {
-    let store = match options.mode {
-        cli::Mode::Local => dbm_git::Store::Local,
-        _ => dbm_git::Store::Shared,
-    };
-
-    let exports = dbm_git::export(store, options.target.as_deref())?;
+    let slug_git = options.storage.open_read()?;
+    let exports = dbm_git::export(&slug_git, options.target.as_deref())?;
     if exports.is_empty() {
         println!("No history found");
         return Ok(());

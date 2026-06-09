@@ -14,7 +14,7 @@ pub enum Store {
 
 impl Store {
     // Writable, creates the ref if missing
-    fn open_write(&self) -> Result<SlugGit, SlugError> {
+    pub fn open_write(&self) -> Result<SlugGit, SlugError> {
         match self {
             Store::Shared => SlugGit::shared(),
             Store::Local => SlugGit::local(),
@@ -22,7 +22,7 @@ impl Store {
     }
 
     // Readonly, doesn't create ref if missing
-    fn open_read(&self) -> Result<SlugGit, SlugError> {
+    pub fn open_read(&self) -> Result<SlugGit, SlugError> {
         match self {
             Store::Shared => SlugGit::open_shared(),
             Store::Local => SlugGit::open_local(),
@@ -32,12 +32,10 @@ impl Store {
 
 
 // TODO: dont checkout just write directly the data to branch
-pub fn insert(store: Store, data: &Vec<PerfData>) -> Result<(), SlugError> {
+pub fn insert(slug_git: &SlugGit, data: &Vec<PerfData>) -> Result<(), SlugError> {
     if data.is_empty() {
         return Ok(());
     }
-
-    let slug_git = store.open_write()?;
 
     let mut updates = Vec::new();
     let commit_hash = &data[0].commit_hash;
@@ -60,9 +58,7 @@ pub fn insert(store: Store, data: &Vec<PerfData>) -> Result<(), SlugError> {
 }
 
 
-pub fn get_latest_n(store: Store, name: &String, n: usize) -> Result<Vec<PerfData>, SlugError> {
-    let slug_git = store.open_read()?;
-
+pub fn get_latest_n(slug_git: &SlugGit, name: &String, n: usize) -> Result<Vec<PerfData>, SlugError> {
     // Check if historical data exists for this test
     if !slug_git.file_exists(name)? {
         return Ok(Vec::new());
@@ -78,9 +74,7 @@ pub fn get_latest_n(store: Store, name: &String, n: usize) -> Result<Vec<PerfDat
 
 // Dump stored CSV data for export. If target is None data for all tests are exported
 // Returns (test_name, raw_csv)
-pub fn export(store: Store, target: Option<&str>) -> Result<Vec<(String, String)>, SlugError> {
-    let slug_git = store.open_read()?;
-
+pub fn export(slug_git: &SlugGit, target: Option<&str>) -> Result<Vec<(String, String)>, SlugError> {
     let names = match target {
         Some(name) => {
             let name = name.to_string();

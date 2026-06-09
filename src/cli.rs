@@ -5,18 +5,13 @@ use std::fs::File;
 use getopts::Options;
 use std::env;
 use crate::errors::SlugError;
-
-// Where to save the data from current run / where to look for history
-pub enum Mode {
-    DryRun,
-    Local,
-    Shared,
-}
+use crate::dbm_git::Store;
 
 pub struct CliOptions {
     pub file: Option<String>,
     pub library_type: Option<String>,
-    pub mode: Mode,
+    pub storage: Store,
+    pub write: bool,
     pub subcommand: Option<String>,
     pub target: Option<String>,
     pub zscore_threshold: f64,
@@ -30,7 +25,7 @@ pub enum PerfDataReader {
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!(
-        "Usage: {prog} -t LIBRARY [-f FILE] [--local | --shared] [--zscore THRESHOLD] [--ewma ALPHA]\n       {prog} history [TEST] [--local]\n       {prog} clean",
+        "Usage: {prog} -t LIBRARY [-f FILE] [--local | --shared] [--record] [--zscore THRESHOLD] [--ewma ALPHA]\n       {prog} history [TEST] [--local | --shared]\n       {prog} clean",
         prog = program
     );
     print!("{}", opts.usage(&brief));
@@ -51,8 +46,9 @@ pub fn parse_args() -> Result<CliOptions, SlugError> {
     let mut opts = Options::new();
     opts.optopt("f", "file", "set input file name", "FILENAME");
     opts.optopt("t", "type", "set library type", "LIBRARY");
-    opts.optflag("l", "local", "store records locally");
-    opts.optflag("s", "shared", "store records to shared git history (refs/slug/shared)");
+    opts.optflag("l", "local", "use local history (default)");
+    opts.optflag("s", "shared", "use shared git history (refs/slug/shared)");
+    opts.optflag("", "record", "record this run (default is dry run)");
     opts.optopt("", "zscore", "set z-score anomaly threshold (default: 3.0)", "FLOAT");
     opts.optopt("", "ewma", "set ewma smoothing factor alpha (default: 0.2)", "FLOAT");
     opts.optflag("h", "help", "print this help menu");
@@ -69,15 +65,15 @@ pub fn parse_args() -> Result<CliOptions, SlugError> {
     let library_type = matches.opt_str("t");
     let local = matches.opt_present("l");
     let shared = matches.opt_present("s");
+    let write = matches.opt_present("record");
 
     // Positional argument (test name in `slug history fib32`)
     let target = matches.free.first().cloned();
 
-    let mode = match (local, shared) {
-        (false, false) => Mode::DryRun,
-        (true, false) => Mode::Local,
-        (false, true) => Mode::Shared,
+    let storage = match (local, shared) {
         (true, true) => return Err(SlugError::Cli("Use at most one of --local, --shared".to_string())),
+        (_, true) => Store::Shared,
+        _ => Store::Local,
     };
 
     let zscore_threshold = match matches.opt_str("zscore") {
@@ -98,7 +94,8 @@ pub fn parse_args() -> Result<CliOptions, SlugError> {
     Ok(CliOptions {
         file,
         library_type,
-        mode,
+        storage,
+        write,
         subcommand,
         target,
         zscore_threshold,
