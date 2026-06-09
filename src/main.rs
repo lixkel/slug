@@ -31,7 +31,7 @@ fn main() -> Result<(), SlugError> {
         cli::Mode::Shared => {
             let mut baseline = dbm_git::get_latest_n(dbm_git::Store::Shared, &name, BASELINE)?;
             dbm_git::insert(dbm_git::Store::Shared, &data)?;
-            println!("Recorded to shared git history (refs/heads/slug)");
+            println!("Recorded to shared git history (refs/slug/shared)");
             baseline.push(data.into_iter().next().unwrap());
             baseline
         }

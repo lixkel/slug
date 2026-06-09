@@ -8,7 +8,7 @@ jobs:
   benchmark:
     runs-on: "ubuntu-latest"
     permissions:
-      contents: "write" # Allows Slug to push the slug branch back
+      contents: "write" # Allows Slug to push its data ref (refs/slug/shared) back
 
     steps:
       - name: "Checkout repository"

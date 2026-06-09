@@ -52,7 +52,7 @@ pub fn parse_args() -> Result<CliOptions, SlugError> {
     opts.optopt("f", "file", "set input file name", "FILENAME");
     opts.optopt("t", "type", "set library type", "LIBRARY");
     opts.optflag("l", "local", "store records locally");
-    opts.optflag("s", "shared", "store records to shared git history (slug branch)");
+    opts.optflag("s", "shared", "store records to shared git history (refs/slug/shared)");
     opts.optopt("", "zscore", "set z-score anomaly threshold (default: 3.0)", "FLOAT");
     opts.optopt("", "ewma", "set ewma smoothing factor alpha (default: 0.2)", "FLOAT");
     opts.optflag("h", "help", "print this help menu");

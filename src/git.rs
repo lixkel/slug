@@ -3,8 +3,8 @@ use std::path::Path;
 use crate::errors::SlugError;
 
 
-// Shared history, orphan branch pushed in CI
-const SHARED_REF: &str = "refs/heads/slug";
+// Shared history, custom ref pushed in CI (outside refs/heads so it stays out of web branch UI)
+const SHARED_REF: &str = "refs/slug/shared";
 // Local history, ref outside refs/heads so it is never pushed
 const LOCAL_REF: &str = "refs/slug-local/slug";
 // Notes attached to evaluated commits, pointing to the slug data commit

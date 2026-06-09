@@ -27,8 +27,8 @@ runs:
         git config user.email "github-actions[bot]@users.noreply.github.com"
         
         echo "Fetching existing slug data..."
-        # Fetch slug branch and notes so we can add to them
-        git fetch origin slug:slug || echo "Slug branch not found, will be created."
+        # Fetch slug data and notes so we can add to them
+        git fetch origin "+refs/slug/shared:refs/slug/shared" || echo "No existing slug data, will be created."
         git fetch origin "refs/notes/*:refs/notes/*" || echo "No existing notes found."
 
     - name: "Setup Slug"
@@ -57,6 +57,6 @@ runs:
       # Only push if we are on default (master, main, etc.)
       if: github.event_name == 'push'
       run: |
-        echo "Pushing slug branch and git notes back to repository..."
-        git push origin slug
+        echo "Pushing slug data and git notes back to repository..."
+        git push origin refs/slug/shared
         git push origin refs/notes/slug
