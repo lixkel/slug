@@ -1,6 +1,6 @@
 # action.yml
 name: "Slug Performance Tracker"
-description: "Records performance test data in a parallel Git tree using Slug"
+description: "Records performance test data in your repository using Slug"
 inputs:
   file:
     description: "Path to the benchmark output file"
@@ -9,7 +9,7 @@ inputs:
     description: "Parser type (pytest@7.3.0, pyperf@2.7.0, ...)"
     required: true
   github_token:
-    description: "GitHub token for saving performance test data to parallel Git tree"
+    description: "GitHub token for saving performance test data to your repository"
     required: false
     default: ${{ github.token }}
   slug_binary_path:
@@ -28,8 +28,8 @@ runs:
         
         echo "Fetching existing slug data..."
         # Fetch slug data and notes so we can add to them
-        git fetch origin "+refs/slug/shared:refs/slug/shared" || echo "No existing slug data, will be created."
-        git fetch origin "refs/notes/*:refs/notes/*" || echo "No existing notes found."
+        git fetch origin "+refs/slug/shared:refs/slug/shared" || echo "No pre-existing slug data."
+        git fetch origin "refs/notes/*:refs/notes/*" || echo "No pre-existing notes found."
 
     - name: "Setup Slug"
       shell: "bash"
@@ -50,13 +50,24 @@ runs:
       shell: "bash"
       run: |
         echo "Processing ${{ inputs.file }} with parser ${{ inputs.type }}..."
-        $SLUG_BIN -f "${{ inputs.file }}" -t "${{ inputs.type }}"
+        # Record to shared history only on push to master/main
+        # On pull requests Slug evaluates against shared history but writes nothing
+        if [ "${{ github.event_name }}" = "push" ]; then
+          # Capture Slug's exit code
+          SLUG_EXIT=0
+          $SLUG_BIN -f "${{ inputs.file }}" -t "${{ inputs.type }}" --shared --record || SLUG_EXIT=$?
+          echo "SLUG_EXIT=$SLUG_EXIT" >> "$GITHUB_ENV"
+          exit "$SLUG_EXIT"
+        else
+          $SLUG_BIN -f "${{ inputs.file }}" -t "${{ inputs.type }}" --shared
+        fi
 
     - name: "Push Slug Data"
       shell: "bash"
-      # Only push if we are on default (master, main, etc.)
-      if: github.event_name == 'push'
+      # Default branch pushes only
+      # !cancelled() bypasses implicit success() so we still push saved data after regression (exit = 2)
+      if: ${{ !cancelled() && github.event_name == 'push' && (env.SLUG_EXIT == '0' || env.SLUG_EXIT == '2') }}
       run: |
         echo "Pushing slug data and git notes back to repository..."
-        git push origin refs/slug/shared
-        git push origin refs/notes/slug
+        git push origin refs/slug/shared || echo "Nothing to push"
+        git push origin refs/notes/slug || echo "No notes to push"

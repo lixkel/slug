@@ -9,8 +9,36 @@ mod dbm_git;
 mod errors;
 
 use errors::SlugError;
+use std::process::ExitCode;
 
-fn main() -> Result<(), SlugError> {
+// Exit codes, to differentiate between regression error and generic error
+enum Exit {
+    Success = 0,
+    Error = 1,
+    Regression = 2,
+}
+
+impl Exit {
+    fn trigger(self) -> ExitCode {
+        ExitCode::from(self as u8)
+    }
+}
+
+fn main() -> ExitCode {
+    match run() {
+        Ok(()) => Exit::Success.trigger(),
+        Err(SlugError::PerformanceRegression(msg)) => {
+            eprintln!("Performance regression: {}", msg);
+            Exit::Regression.trigger()
+        }
+        Err(e) => {
+            eprintln!("Error: {:?}", e);
+            Exit::Error.trigger()
+        }
+    }
+}
+
+fn run() -> Result<(), SlugError> {
     let options = cli::parse_args()?;
 
     if options.subcommand.is_some() {
