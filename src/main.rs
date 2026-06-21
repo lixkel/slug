@@ -78,7 +78,7 @@ fn run() -> Result<(), SlugError> {
 
     window.push(data.into_iter().next().unwrap());
 
-    statistics::calculate_stats(&window, &options)?;
+    statistics::calculate_stats(&window, &options, &config)?;
 
     Ok(())
 }

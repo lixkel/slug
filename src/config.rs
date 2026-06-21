@@ -8,11 +8,37 @@ use crate::errors::SlugError;
 // Every field has default so config can be partial
 // Unknown keys are rejected
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct Config {
+    // Which checks to run
+    // Names must match those registered in statistics.rs
+    pub enabled: Vec<String>,
+    // How to combine the verdicts of the enabled checks
+    pub policy: Policy,
     pub zscore: Zscore,
     pub ewma: Ewma,
+}
+
+// any = check1 OR check2 OR check3 OR ...
+// all = check1 AND check2 AND check3 AND ...
+#[derive(Debug, Default, Deserialize, Clone, Copy, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum Policy {
+    #[default]
+    Any,
+    All,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            enabled: vec!["ewma".to_string(), "zscore".to_string()],
+            policy: Policy::Any,
+            zscore: Zscore::default(),
+            ewma: Ewma::default(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

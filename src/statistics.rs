@@ -1,11 +1,13 @@
 use crate::parser::PerfData;
 use crate::errors::SlugError;
 use crate::cli::CliOptions;
+use crate::config::{Config, Policy};
 
 // Type signature for a function that evaluates history and returns an error if degradation is found
 type StatEvaluator = fn(&[PerfData], &CliOptions) -> Result<(), SlugError>;
 
 struct StatCheck {
+    pub name: &'static str,
     pub evaluator: StatEvaluator,
     pub required_keys: Vec<&'static str>,
 }
@@ -15,6 +17,7 @@ macro_rules! add_stat_checks {
         $(
             $checks.push(
                 StatCheck {
+                    name: $name,
                     evaluator: $evaluator,
                     required_keys: vec![$($req),*],
                 }
@@ -23,7 +26,7 @@ macro_rules! add_stat_checks {
     };
 }
 
-pub fn calculate_stats(history: &[PerfData], options: &CliOptions) -> Result<(), SlugError> {
+pub fn calculate_stats(history: &[PerfData], options: &CliOptions, config: &Config) -> Result<(), SlugError> {
     if history.is_empty() {
         return Ok(());
     }
@@ -37,13 +40,44 @@ pub fn calculate_stats(history: &[PerfData], options: &CliOptions) -> Result<(),
 
     let latest = history.last().unwrap();
 
-    for check in checks {
+    // Run the checks selected in config
+    let mut verdicts: Vec<Result<(), SlugError>> = Vec::new();
+    for check in &checks {
+        if !config.enabled.iter().any(|name| name == check.name) {
+            continue;
+        }
         if check.required_keys.iter().all(|&k| latest.map.contains_key(k)) {
-            (check.evaluator)(history, options)?;
+            verdicts.push((check.evaluator)(history, options));
         }
     }
 
-    Ok(())
+    combine(verdicts, config.policy)
+}
+
+// Combine the enabled checks verdicts into pass/fail based on selected policy
+fn combine(verdicts: Vec<Result<(), SlugError>>, policy: Policy) -> Result<(), SlugError> {
+    let mut regressions: Vec<String> = Vec::new();
+    let mut ran = 0;
+
+    for verdict in verdicts {
+        ran += 1;
+        match verdict {
+            Ok(()) => {}
+            Err(SlugError::PerformanceRegression(msg)) => regressions.push(msg),
+            Err(other) => return Err(other),
+        }
+    }
+
+    let flag = match policy {
+        Policy::Any => !regressions.is_empty(),
+        Policy::All => ran > 0 && regressions.len() == ran,
+    };
+
+    if flag {
+        Err(SlugError::PerformanceRegression(regressions.join("; ")))
+    } else {
+        Ok(())
+    }
 }
 
 fn evaluate_ewma(history: &[PerfData], options: &CliOptions) -> Result<(), SlugError> {
