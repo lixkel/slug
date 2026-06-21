@@ -1,4 +1,5 @@
 mod cli;
+mod config;
 mod git;
 mod parser;
 mod lib_parsers;
@@ -39,7 +40,8 @@ fn main() -> ExitCode {
 }
 
 fn run() -> Result<(), SlugError> {
-    let options = cli::parse_args()?;
+    let config = config::load_or_default()?;
+    let options = cli::parse_args(&config)?;
 
     if options.subcommand.is_some() {
         return run_subcommand(&options);

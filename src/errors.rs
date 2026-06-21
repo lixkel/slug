@@ -7,6 +7,7 @@ pub enum SlugError {
     Csv(csv::Error),
     Cli(String),
     Parsing(String),
+    Config(String),
     PerformanceRegression(String),
 }
 
@@ -18,6 +19,7 @@ impl fmt::Display for SlugError {
             SlugError::Csv(err) => write!(f, "CSV error: {}", err),
             SlugError::Cli(msg) => write!(f, "CLI error: {}", msg),
             SlugError::Parsing(msg) => write!(f, "Parsing error: {}", msg),
+            SlugError::Config(msg) => write!(f, "Config error: {}", msg),
             SlugError::PerformanceRegression(msg) => write!(f, "Performance regression detected: {}", msg),
         }
     }
@@ -67,5 +69,11 @@ impl From<regex::Error> for SlugError {
 impl From<std::num::ParseFloatError> for SlugError {
     fn from(err: std::num::ParseFloatError) -> Self {
         SlugError::Parsing(err.to_string())
+    }
+}
+
+impl From<toml::de::Error> for SlugError {
+    fn from(err: toml::de::Error) -> Self {
+        SlugError::Config(err.to_string())
     }
 }

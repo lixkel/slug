@@ -6,6 +6,7 @@ use getopts::Options;
 use std::env;
 use crate::errors::SlugError;
 use crate::dbm_git::Store;
+use crate::config::Config;
 
 pub struct CliOptions {
     pub file: Option<String>,
@@ -31,7 +32,7 @@ fn print_usage(program: &str, opts: Options) {
     print!("{}", opts.usage(&brief));
 }
 
-pub fn parse_args() -> Result<CliOptions, SlugError> {
+pub fn parse_args(config: &Config) -> Result<CliOptions, SlugError> {
     let args: Vec<String> = env::args().collect();
     let program = args[0].clone();
 
@@ -76,14 +77,15 @@ pub fn parse_args() -> Result<CliOptions, SlugError> {
         _ => Store::Local,
     };
 
+    // CLI flag value beats config value
     let zscore_threshold = match matches.opt_str("zscore") {
         Some(val) => val.parse::<f64>().map_err(|_| SlugError::Cli("Invalid float for zscore".to_string()))?,
-        None => 3.0,
+        None => config.zscore.threshold,
     };
 
     let ewma_alpha = match matches.opt_str("ewma") {
         Some(val) => val.parse::<f64>().map_err(|_| SlugError::Cli("Invalid float for ewma".to_string()))?,
-        None => 0.2,
+        None => config.ewma.alpha,
     };
 
     if library_type.is_none() && subcommand.is_none() {
