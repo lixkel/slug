@@ -40,14 +40,20 @@ pub fn calculate_stats(history: &[PerfData], options: &CliOptions, config: &Conf
 
     let latest = history.last().unwrap();
 
-    // Run the checks selected in config
+    // Run the checks selected in config, each over its own window of recent points
     let mut verdicts: Vec<Result<(), SlugError>> = Vec::new();
     for check in &checks {
         if !config.enabled.iter().any(|name| name == check.name) {
             continue;
         }
         if check.required_keys.iter().all(|&k| latest.map.contains_key(k)) {
-            verdicts.push((check.evaluator)(history, options));
+            let window = match check.name {
+                "zscore" => config.zscore.window,
+                "ewma" => config.ewma.window,
+                _ => history.len(),
+            };
+            let start = history.len().saturating_sub(window);
+            verdicts.push((check.evaluator)(&history[start..], options));
         }
     }
 

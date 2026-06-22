@@ -45,23 +45,33 @@ impl Default for Config {
 #[serde(deny_unknown_fields, default)]
 pub struct Zscore {
     pub threshold: f64,
+    // How many recent points to evaluate against
+    pub window: usize,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct Ewma {
     pub alpha: f64,
+    pub window: usize,
 }
 
 impl Default for Zscore {
     fn default() -> Self {
-        Zscore { threshold: 3.0 }
+        Zscore { threshold: 3.0, window: 100 }
     }
 }
 
 impl Default for Ewma {
     fn default() -> Self {
-        Ewma { alpha: 0.2 }
+        Ewma { alpha: 0.2, window: 100 }
+    }
+}
+
+impl Config {
+    // Largest window any check needs
+    pub fn max_window(&self) -> usize {
+        self.zscore.window.max(self.ewma.window)
     }
 }
 

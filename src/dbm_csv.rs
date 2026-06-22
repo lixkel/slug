@@ -61,8 +61,9 @@ pub fn get_latest_n<R: Read>(reader: BufReader<R>, name: &String, n: usize)  -> 
 
     // TODO: there has to be way to do this without loading it all into vector
     let results: Vec<_> = csv_reader.records().collect::<Result<Vec<_>, csv::Error>>()?;
+    // Records are appended oldest first
     for result in results.iter().rev().take(n) {
-        
+
         let mut commit_hash = String::new();
         let mut map: HashMap<String, f64> = HashMap::new();
         for (header, value) in headers.iter().zip(result.iter()) {
@@ -82,7 +83,7 @@ pub fn get_latest_n<R: Read>(reader: BufReader<R>, name: &String, n: usize)  -> 
         });
     }
 
-    // TODO: check the proper order
+    // Flip back to oldest first
     records.reverse();
 
     Ok(records)

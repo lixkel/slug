@@ -55,7 +55,6 @@ fn run() -> Result<(), SlugError> {
     let data = parser::parse(reader, &lib)?;
 
     let name = data[0].name.clone();
-    const BASELINE: usize = 3;
 
     // Open repo slug was called in
     let slug_git = if options.write {
@@ -64,7 +63,7 @@ fn run() -> Result<(), SlugError> {
         options.storage.open_read()?
     };
 
-    let mut window = dbm_git::get_latest_n(&slug_git, &name, BASELINE)?;
+    let mut window = dbm_git::get_latest_n(&slug_git, &name, config.max_window())?;
 
     if options.write {
         dbm_git::insert(&slug_git, &data)?;
