@@ -87,6 +87,7 @@ fn run_subcommand(options: &cli::CliOptions) -> Result<(), SlugError> {
     match subcommand {
         "clean" => clean(),
         "history" => history(options),
+        "setup" => config::write_example(),
         _ => Err(SlugError::Cli(format!("Unknown subcommand '{}'", subcommand))),
     }
 }

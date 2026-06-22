@@ -95,3 +95,36 @@ pub fn load_or_default() -> Result<Config, SlugError> {
         Err(e) => Err(SlugError::Io(e)),
     }
 }
+
+
+const EXAMPLE_CONFIG: &str = "\
+# Slug configuration
+
+# Which checks to run, and how to combine their verdicts.
+enabled = [\"ewma\", \"zscore\"]
+# any = flag if ANY of enabled checks flag
+# all = flag only if ALL checks flag
+policy = \"any\"
+
+[zscore]
+# flag when value is this many standard deviations above the mean
+threshold = 3.0
+# how many recent points to evaluate against
+window = 100
+
+[ewma]
+# smoothing factor, higher = more emphasis on recent values
+alpha = 0.2
+window = 100
+";
+
+// Write the example config to the repository root
+pub fn write_example() -> Result<(), SlugError> {
+    let path = config_path();
+    if path.exists() {
+        return Err(SlugError::Config(format!("{} already exists", path.display())));
+    }
+    fs::write(&path, EXAMPLE_CONFIG)?;
+    println!("Created {}", path.display());
+    Ok(())
+}

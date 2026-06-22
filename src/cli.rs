@@ -26,7 +26,7 @@ pub enum PerfDataReader {
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!(
-        "Usage: {prog} -t LIBRARY [-f FILE] [--local | --shared] [--record] [--zscore THRESHOLD] [--ewma ALPHA]\n       {prog} history [TEST] [--local | --shared]\n       {prog} clean",
+        "Usage: {prog} -t LIBRARY [-f FILE] [--local | --shared] [--record] [--zscore THRESHOLD] [--ewma ALPHA]\n       {prog} history [TEST] [--local | --shared]\n       {prog} setup\n       {prog} clean",
         prog = program
     );
     print!("{}", opts.usage(&brief));
@@ -39,7 +39,7 @@ pub fn parse_args(config: &Config) -> Result<CliOptions, SlugError> {
     let subcommand = if args.len() > 1 && !args[1].starts_with('-') {
         let subcommand = args[1].clone();
         match subcommand.as_str() {
-            "clean" | "history" => Some(subcommand),
+            "clean" | "history" | "setup" => Some(subcommand),
             _ => None,
         }
     } else { None };
