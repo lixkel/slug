@@ -87,7 +87,7 @@ fn combine(verdicts: Vec<Result<(), SlugError>>, policy: Policy) -> Result<(), S
 }
 
 fn evaluate_ewma(history: &[PerfData], options: &CliOptions) -> Result<(), SlugError> {
-    ewma(history, options.ewma_alpha)
+    ewma(history, options.ewma_alpha, options.ewma_threshold)
 }
 
 fn evaluate_zscore(history: &[PerfData], options: &CliOptions) -> Result<(), SlugError> {
@@ -137,13 +137,13 @@ fn evaluate_zscore(history: &[PerfData], options: &CliOptions) -> Result<(), Slu
 
     // Z-score > threshold execution time is 3 standard deviations worse than average
     if z_score > options.zscore_threshold {
-        println!("\x1b[31mZ-Score anomaly detected!!!\x1b[0m");
+        println!("\x1b[31mZ-Score anomaly detected ({:.2}, threshold {:.1}) !!!\x1b[0m", z_score, options.zscore_threshold);
         return Err(SlugError::PerformanceRegression(
             format!("Z-Score for {} is {:.2} (threshold {:.1})", METRIC, z_score, options.zscore_threshold)
         ));
     }
 
-    println!("\x1b[32mZ-Score within norm ({:.2}) for {}\x1b[0m", z_score, METRIC);
+    println!("\x1b[32mZ-Score within norm ({:.2})\x1b[0m", z_score);
     Ok(())
 }
 
@@ -171,7 +171,7 @@ pub fn ewma_calc(values: &[PerfData], alpha: f64) -> Vec<f64> {
 }
 
 // Exponential weighted moving average evaluation
-pub fn ewma(values: &[PerfData], alpha: f64) -> Result<(), SlugError> {
+pub fn ewma(values: &[PerfData], alpha: f64, threshold: f64) -> Result<(), SlugError> {
     if values.len() < 5 {
         println!("\x1b[38;2;255;165;0mToo few samples for exponential moving average\x1b[0m");
         return Ok(());
@@ -183,13 +183,13 @@ pub fn ewma(values: &[PerfData], alpha: f64) -> Result<(), SlugError> {
     let len = avg.len();
     let change = (avg[len-1]-avg[len-2])/avg[len-2];
 
-    if change < 0.2 {
-        println!("\x1b[32mAll within norm in exponential moving average\x1b[0m");
+    if change < threshold {
+        println!("\x1b[32mEWMA change {:+.1}% (threshold {:.0}%)\x1b[0m", change * 100.0, threshold * 100.0);
         Ok(())
     } else {
-        println!("\x1b[31mSignificant performance degradation!!!\x1b[0m");
+        println!("\x1b[31mEWMA change {:+.1}% (threshold {:.0}%) !!!\x1b[0m", change * 100.0, threshold * 100.0);
         Err(SlugError::PerformanceRegression(
-            format!("Performance degraded by {:.2}%", change * 100.0)
+            format!("EWMA change {:+.1}% exceeds threshold {:.0}%", change * 100.0, threshold * 100.0)
         ))
     }
 }

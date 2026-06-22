@@ -17,6 +17,7 @@ pub struct CliOptions {
     pub target: Option<String>,
     pub zscore_threshold: f64,
     pub ewma_alpha: f64,
+    pub ewma_threshold: f64,
 }
 
 pub enum PerfDataReader {
@@ -88,6 +89,9 @@ pub fn parse_args(config: &Config) -> Result<CliOptions, SlugError> {
         None => config.ewma.alpha,
     };
 
+    // no CLI flag for the ewma threshold; it comes from config (like the windows)
+    let ewma_threshold = config.ewma.threshold;
+
     if library_type.is_none() && subcommand.is_none() {
         print_usage(&program, opts);
         return Err(SlugError::Cli("Missing mandatory option -t".to_string()));
@@ -102,6 +106,7 @@ pub fn parse_args(config: &Config) -> Result<CliOptions, SlugError> {
         target,
         zscore_threshold,
         ewma_alpha,
+        ewma_threshold,
     })
 }
 
