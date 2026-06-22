@@ -6,3 +6,7 @@ target/
 Cargo.lock
 *.db
 *.patch
+
+test/*
+!test/*.sh
+!test/*-template
