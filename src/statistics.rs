@@ -93,8 +93,8 @@ fn evaluate_ewma(history: &[PerfData], options: &CliOptions) -> Result<(), SlugE
 fn evaluate_zscore(history: &[PerfData], options: &CliOptions) -> Result<(), SlugError> {
     const METRIC: &str = "mean";
     
-    // We need >2 history items to calculate std_dev
-    if history.len() < 3 {
+    // We need a baseline before std-dev is meaningful
+    if history.len() < 10 {
         println!("\x1b[38;2;255;165;0mToo few samples for Z-Score anomaly detection\x1b[0m");
         return Ok(());
     }
@@ -172,7 +172,7 @@ pub fn ewma_calc(values: &[PerfData], alpha: f64) -> Vec<f64> {
 
 // Exponential weighted moving average evaluation
 pub fn ewma(values: &[PerfData], alpha: f64) -> Result<(), SlugError> {
-    if values.len() <= 1 {
+    if values.len() < 5 {
         println!("\x1b[38;2;255;165;0mToo few samples for exponential moving average\x1b[0m");
         return Ok(());
     }
