@@ -8,42 +8,44 @@ const SHARED_REF: &str = "refs/slug/shared";
 // Local history, ref outside refs/heads so it is never pushed
 const LOCAL_REF: &str = "refs/slug-local/slug";
 // Notes attached to evaluated commits, pointing to the slug data commit
-const NOTES_REF: &str = "refs/notes/slug";
+const SHARED_NOTES_REF: &str = "refs/notes/slug-shared";
+const LOCAL_NOTES_REF: &str = "refs/notes/slug-local";
 
 pub struct SlugGit {
     pub repo: git2::Repository,
     pub slug_ref: String,
+    pub notes_ref: String,
 }
 
 
 impl SlugGit {
     // Shared history handle (creates the branch if missing)
     pub fn shared() -> Result<Self, SlugError> {
-        let instance = Self::open(SHARED_REF)?;
+        let instance = Self::open(SHARED_REF, SHARED_NOTES_REF)?;
         instance.ensure_ref_exists()?;
         Ok(instance)
     }
 
     // Local history handle (creates the ref if missing)
     pub fn local() -> Result<Self, SlugError> {
-        let instance = Self::open(LOCAL_REF)?;
+        let instance = Self::open(LOCAL_REF, LOCAL_NOTES_REF)?;
         instance.ensure_ref_exists()?;
         Ok(instance)
     }
 
     // Readonly handle to local history
     pub fn open_local() -> Result<Self, SlugError> {
-        Self::open(LOCAL_REF)
+        Self::open(LOCAL_REF, LOCAL_NOTES_REF)
     }
 
     // Readonly handle to the shared history
     pub fn open_shared() -> Result<Self, SlugError> {
-        Self::open(SHARED_REF)
+        Self::open(SHARED_REF, SHARED_NOTES_REF)
     }
 
-    fn open(slug_ref: &str) -> Result<Self, SlugError> {
+    fn open(slug_ref: &str, notes_ref: &str) -> Result<Self, SlugError> {
         let repo = git2::Repository::discover(".")?;
-        Ok(Self { repo, slug_ref: slug_ref.to_string() })
+        Ok(Self { repo, slug_ref: slug_ref.to_string(), notes_ref: notes_ref.to_string() })
     }
 
     pub fn ref_exists(&self) -> Result<bool, SlugError> {
@@ -135,7 +137,7 @@ impl SlugGit {
         self.repo.note(
             &sig,
             &sig,
-            Some("refs/notes/slug"),
+            Some(&self.notes_ref),
             oid,
             note_message,
             true // Overwrite if note already exists
@@ -206,7 +208,7 @@ pub fn clean() -> Result<Vec<String>, SlugError> {
     let repo = git2::Repository::discover(".")?;
     let mut removed = Vec::new();
 
-    for refname in [SHARED_REF, LOCAL_REF, NOTES_REF] {
+    for refname in [SHARED_REF, LOCAL_REF, SHARED_NOTES_REF, LOCAL_NOTES_REF] {
         match repo.find_reference(refname) {
             Ok(mut reference) => {
                 reference.delete()?;
