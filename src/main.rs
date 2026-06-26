@@ -54,23 +54,18 @@ fn run() -> Result<(), SlugError> {
 
     let data = parser::parse(reader, &lib)?;
 
+    // TODO: check if here shouldnt be loop
     let name = data[0].name.clone();
 
     // Open repo slug was called in
-    let slug_git = if options.write {
-        options.storage.open_write()?
-    } else {
-        options.storage.open_read()?
-    };
+    let slug_git = options.storage.open()?;
 
+    // TODO: maybe put this after insert
     let mut window = dbm_git::get_latest_n(&slug_git, &name, config.max_window())?;
 
     if options.write {
         dbm_git::insert(&slug_git, &data)?;
-        match options.storage {
-            dbm_git::Store::Shared => println!("Recorded to shared git history (refs/slug/shared)"),
-            dbm_git::Store::Local => println!("Recorded to local history (refs/slug-local)"),
-        }
+        println!("Recorded to {}", slug_git.slug_ref);
     } else {
         println!("Dry run, nothing written (use --record to store)");
     }
@@ -103,7 +98,7 @@ fn clean() -> Result<(), SlugError> {
 }
 
 fn history(options: &cli::CliOptions) -> Result<(), SlugError> {
-    let slug_git = options.storage.open_read()?;
+    let slug_git = options.storage.open()?;
     let exports = dbm_git::export(&slug_git, options.target.as_deref())?;
     if exports.is_empty() {
         println!("No history found");

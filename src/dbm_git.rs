@@ -13,19 +13,12 @@ pub enum Store {
 }
 
 impl Store {
-    // Writable, creates the ref if missing
-    pub fn open_write(&self) -> Result<SlugGit, SlugError> {
+    // Handle to this store for the current branch. Reads resolve the inherited
+    // baseline; writes create the branch ref on first record.
+    pub fn open(&self) -> Result<SlugGit, SlugError> {
         match self {
             Store::Shared => SlugGit::shared(),
             Store::Local => SlugGit::local(),
-        }
-    }
-
-    // Readonly, doesn't create ref if missing
-    pub fn open_read(&self) -> Result<SlugGit, SlugError> {
-        match self {
-            Store::Shared => SlugGit::open_shared(),
-            Store::Local => SlugGit::open_local(),
         }
     }
 }
@@ -43,7 +36,7 @@ pub fn insert(slug_git: &SlugGit, data: &Vec<PerfData>) -> Result<(), SlugError>
     for entry in data.iter() {
         let mut csv_buffer = Vec::new();
         let writer = Writer::from_writer(Cursor::new(&mut csv_buffer));
-        dbm_csv::get_data_entry_string(writer, entry, slug_git.file_exists(&entry.name)?)?;
+        dbm_csv::get_data_entry_string(writer, entry, slug_git.base_file_exists(&entry.name)?)?;
 
         let csv_string = String::from_utf8(csv_buffer).map_err(|e| SlugError::Parsing(e.to_string()))?;
         updates.push((entry.name.clone(), csv_string));
@@ -59,38 +52,30 @@ pub fn insert(slug_git: &SlugGit, data: &Vec<PerfData>) -> Result<(), SlugError>
 
 
 pub fn get_latest_n(slug_git: &SlugGit, name: &String, n: usize) -> Result<Vec<PerfData>, SlugError> {
-    // Check if historical data exists for this test
-    if !slug_git.file_exists(name)? {
-        return Ok(Vec::new());
-    }
+    // Inherited history for this test, or nothing if no ancestor was benchmarked
+    let data = match slug_git.read_base_file(name)? {
+        Some(data) => data,
+        None => return Ok(Vec::new()),
+    };
 
-    let cursor = Cursor::new(slug_git.read_file_slug(name)?);
+    let cursor = Cursor::new(data);
     let reader = BufReader::new(cursor);
 
-    // TODO: think about if i should not only get one data point from each checkout
     dbm_csv::get_latest_n(reader, name, n)
 }
 
 
-// Dump stored CSV data for export. If target is None data for all tests are exported
+// Dump stored CSV data for export
+// If target is None all data is exported
 // Returns (test_name, raw_csv)
 pub fn export(slug_git: &SlugGit, target: Option<&str>) -> Result<Vec<(String, String)>, SlugError> {
-    let names = match target {
-        Some(name) => {
-            let name = name.to_string();
-            if !slug_git.file_exists(&name)? {
-                return Err(SlugError::Parsing(format!("No history for test '{}'", name)));
-            }
-            vec![name]
-        }
-        None => slug_git.list_files()?,
-    };
+    let mut exports = slug_git.read_all_history()?;
 
-    let mut exports = Vec::new();
-    for name in names {
-        let content = String::from_utf8(slug_git.read_file_slug(&name)?)
-            .map_err(|e| SlugError::Parsing(e.to_string()))?;
-        exports.push((name, content));
+    if let Some(name) = target {
+        exports.retain(|(test, _)| test == name);
+        if exports.is_empty() {
+            return Err(SlugError::Parsing(format!("No history for test '{}'", name)));
+        }
     }
 
     Ok(exports)

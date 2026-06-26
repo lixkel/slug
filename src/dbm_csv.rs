@@ -50,7 +50,8 @@ pub fn get_data_entry_string<W: std::io::Write>(mut writer: Writer<W>, data: &Pe
 }
 
 
-pub fn get_latest_n<R: Read>(reader: BufReader<R>, name: &String, n: usize)  -> Result<Vec<PerfData>, SlugError> {
+// Parse a test's CSV history and return its latest n records, oldest first
+pub fn get_latest_n<R: Read>(reader: BufReader<R>, name: &String, n: usize) -> Result<Vec<PerfData>, SlugError> {
     let mut csv_reader = ReaderBuilder::new()
         .has_headers(true)
         .from_reader(reader);
@@ -59,26 +60,23 @@ pub fn get_latest_n<R: Read>(reader: BufReader<R>, name: &String, n: usize)  -> 
 
     let mut records: Vec<PerfData> = Vec::new();
 
-    // TODO: there has to be way to do this without loading it all into vector
     let results: Vec<_> = csv_reader.records().collect::<Result<Vec<_>, csv::Error>>()?;
-    // Records are appended oldest first
+    // Records are appended oldest first, so take the last n
     for result in results.iter().rev().take(n) {
-
         let mut commit_hash = String::new();
         let mut map: HashMap<String, f64> = HashMap::new();
         for (header, value) in headers.iter().zip(result.iter()) {
-            let header_str = header.to_string();
             if header == "commit_hash" {
                 commit_hash = value.to_string();
                 continue;
             }
 
-            map.insert(header_str, value.parse::<f64>()?);
+            map.insert(header.to_string(), value.parse::<f64>()?);
         }
 
         records.push(PerfData {
             name: name.clone(),
-            commit_hash: commit_hash,
+            commit_hash,
             map,
         });
     }
