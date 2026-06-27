@@ -38,14 +38,17 @@ pub fn insert(slug_git: &SlugGit, data: &Vec<PerfData>) -> Result<(), SlugError>
         let writer = Writer::from_writer(Cursor::new(&mut csv_buffer));
         dbm_csv::get_data_entry_string(writer, entry, slug_git.base_file_exists(&entry.name)?)?;
 
-        let csv_string = String::from_utf8(csv_buffer).map_err(|e| SlugError::Parsing(e.to_string()))?;
+        let csv_string = String::from_utf8(csv_buffer)?;
         updates.push((entry.name.clone(), csv_string));
     }
 
-    let slug_commit_hash = slug_git.edit_branch_slug(commit_hash, &updates)?;
-
-    let note_message = format!("Benchmark-Results: {}", slug_commit_hash);
-    slug_git.add_note(commit_hash, &note_message)?;
+    // slug_edit_branch may rewrite descendant data commits too; re-note each so
+    // every source commit still maps to its (possibly new) data commit.
+    let notes = slug_git.slug_edit_branch(commit_hash, &updates)?;
+    for (target, data_commit) in &notes {
+        let note_message = format!("Benchmark-Results: {}", data_commit);
+        slug_git.add_note(target, &note_message)?;
+    }
 
     Ok(())
 }

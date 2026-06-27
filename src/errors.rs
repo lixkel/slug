@@ -11,6 +11,12 @@ pub enum SlugError {
     PerformanceRegression(String),
 }
 
+impl SlugError {
+    pub fn parsing(msg: impl Into<String>) -> Self {
+        SlugError::Parsing(msg.into())
+    }
+}
+
 impl fmt::Display for SlugError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -68,6 +74,12 @@ impl From<regex::Error> for SlugError {
 
 impl From<std::num::ParseFloatError> for SlugError {
     fn from(err: std::num::ParseFloatError) -> Self {
+        SlugError::Parsing(err.to_string())
+    }
+}
+
+impl From<std::string::FromUtf8Error> for SlugError {
+    fn from(err: std::string::FromUtf8Error) -> Self {
         SlugError::Parsing(err.to_string())
     }
 }
