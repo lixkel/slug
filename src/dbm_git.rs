@@ -50,6 +50,11 @@ pub fn insert(slug_git: &SlugGit, data: &Vec<PerfData>) -> Result<(), SlugError>
         slug_git.add_note(target, &note_message)?;
     }
 
+    // Keep loose objects from piling up
+    if let Err(e) = slug_git.gc_auto() {
+        eprintln!("Warning: git gc --auto failed: {}", e);
+    }
+
     Ok(())
 }
 

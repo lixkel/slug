@@ -209,6 +209,24 @@ impl SlugGit {
         Ok(())
     }
 
+    // Call Git housekeeping to pack loose objects, libgit2 never calls gc
+    // Each record commit writes a whole file blob per record (more when replay
+    // rewrites descendants) so loose objects grow until packed
+    // --auto runs housekeeping only when required, otherwise it early exits
+    pub fn gc_auto(&self) -> Result<(), SlugError> {
+        let status = std::process::Command::new("git")
+            .arg("--git-dir")
+            .arg(self.repo.path())
+            .args(["gc", "--auto", "--quiet"])
+            .status()?;
+
+        if status.success() {
+            Ok(())
+        } else {
+            Err(SlugError::parsing(format!("git gc --auto exited with {}", status)))
+        }
+    }
+
     // Returns latest Slug record commit from this branch
     fn branch_tip_commit(&self) -> Result<Option<git2::Commit<'_>>, SlugError> {
         match self.repo.find_reference(&self.slug_ref) {
