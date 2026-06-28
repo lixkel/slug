@@ -42,9 +42,9 @@ pub fn insert(slug_git: &SlugGit, data: &Vec<PerfData>) -> Result<(), SlugError>
         updates.push((entry.name.clone(), csv_string));
     }
 
-    // slug_edit_branch may rewrite descendant data commits too; re-note each so
+    // slug_record_data may rewrite descendant data commits too; re-note each so
     // every source commit still maps to its (possibly new) data commit.
-    let notes = slug_git.slug_edit_branch(commit_hash, &updates)?;
+    let notes = slug_git.slug_record_data(commit_hash, &updates)?;
     for (target, data_commit) in &notes {
         let note_message = format!("Benchmark-Results: {}", data_commit);
         slug_git.add_note(target, &note_message)?;
