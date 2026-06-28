@@ -65,7 +65,7 @@ fn run() -> Result<(), SlugError> {
 
     if options.write {
         dbm_git::insert(&slug_git, &data)?;
-        println!("Recorded to {}", slug_git.ref_prefix);
+        println!("Recorded to {}", slug_git.notes_ref);
     } else {
         println!("Dry run, nothing written (use --record to store)");
     }
