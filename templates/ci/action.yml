@@ -27,9 +27,10 @@ runs:
         git config user.email "github-actions[bot]@users.noreply.github.com"
         
         echo "Fetching existing slug data..."
-        # Fetch slug data and notes so we can add to them
-        git fetch origin "+refs/slug/shared:refs/slug/shared" || echo "No pre-existing slug data."
-        git fetch origin "refs/notes/*:refs/notes/*" || echo "No pre-existing notes found."
+        # Slug keys each branch by its tip's source commit (refs/slug/<sha>), so we need to fetch
+        # the whole namespace plus the shared notes index that maps commits to records
+        git fetch origin "+refs/slug/*:refs/slug/*" || echo "No pre-existing slug data."
+        git fetch origin "+refs/notes/slug-shared:refs/notes/slug-shared" || echo "No pre-existing notes found."
 
     - name: "Setup Slug"
       shell: "bash"
@@ -50,8 +51,9 @@ runs:
       shell: "bash"
       run: |
         echo "Processing ${{ inputs.file }} with parser ${{ inputs.type }}..."
-        # Record to shared history only on push to master/main
-        # On pull requests Slug evaluates against shared history but writes nothing
+        # On push record measurements into shared history and evaluate it
+        # On pull request only evaluate it against the records from the target branch
+        # History is keyed by commit (not branch), so a push records into its own commit's line.
         if [ "${{ github.event_name }}" = "push" ]; then
           # Capture Slug's exit code
           SLUG_EXIT=0
@@ -64,10 +66,9 @@ runs:
 
     - name: "Push Slug Data"
       shell: "bash"
-      # Default branch pushes only
       # !cancelled() bypasses implicit success() so we still push saved data after regression (exit = 2)
       if: ${{ !cancelled() && github.event_name == 'push' && (env.SLUG_EXIT == '0' || env.SLUG_EXIT == '2') }}
       run: |
         echo "Pushing slug data and git notes back to repository..."
-        git push origin refs/slug/shared || echo "Nothing to push"
-        git push origin refs/notes/slug || echo "No notes to push"
+        git push origin "refs/slug/*" || echo "Nothing to push"
+        git push origin refs/notes/slug-shared || echo "No notes to push"

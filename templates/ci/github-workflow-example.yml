@@ -1,22 +1,23 @@
 name: "Performance Benchmarks"
 
 on:
-  # Push to default branch is evaluated and saved in shared history
+  # Push is evaluated against history from the same branch and then recorded
   push:
-    branches: [ "master", "main" ]
-  # Pull requests are evaluated against shared history but not recorded
+  # Pull requests (into any branch) are evaluated against the target branch's history but not recorded
   pull_request:
-    branches: [ "master", "main" ]
 
 concurrency:
   group: "slug-storage"       # Serialize runs to prevent concurrent pushes
   cancel-in-progress: false   # Never cancel run, it may be mid push
 
+# Deleted/reset branches can leave behind orphaned Slug records, clean them with `slug prune`
+# from somewhere the full branch set is visible (e.g. scheduled job, locally)
+
 jobs:
   benchmark:
     runs-on: "ubuntu-latest"
     permissions:
-      contents: "write" # Allows Slug to push its data ref (refs/slug/shared) back
+      contents: "write" # Allows Slug to push its data refs (refs/slug/*) back
 
     steps:
       - name: "Checkout repository"
