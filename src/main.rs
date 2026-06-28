@@ -81,6 +81,7 @@ fn run_subcommand(options: &cli::CliOptions) -> Result<(), SlugError> {
     let subcommand = options.subcommand.as_deref().unwrap_or("");
     match subcommand {
         "clean" => clean(),
+        "prune" => prune(),
         "history" => history(options),
         "setup" => config::write_example(),
         _ => Err(SlugError::Cli(format!("Unknown subcommand '{}'", subcommand))),
@@ -93,6 +94,16 @@ fn clean() -> Result<(), SlugError> {
         println!("Nothing to clean, no slug data found");
     } else {
         println!("Cleaning successful");
+    }
+    Ok(())
+}
+
+fn prune() -> Result<(), SlugError> {
+    let removed = git::prune()?;
+    if removed.is_empty() {
+        println!("Nothing to prune, everything is still reachable");
+    } else {
+        println!("Pruned {} unreachable record(s)", removed.len());
     }
     Ok(())
 }

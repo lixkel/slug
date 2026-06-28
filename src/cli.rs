@@ -40,7 +40,7 @@ pub fn parse_args(config: &Config) -> Result<CliOptions, SlugError> {
     let subcommand = if args.len() > 1 && !args[1].starts_with('-') {
         let subcommand = args[1].clone();
         match subcommand.as_str() {
-            "clean" | "history" | "setup" => Some(subcommand),
+            "clean" | "prune" | "history" | "setup" => Some(subcommand),
             _ => None,
         }
     } else { None };

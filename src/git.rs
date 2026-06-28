@@ -38,7 +38,7 @@ impl SlugGit {
     }
 
     // Inverse of tip_ref, the source commit hash encoded in a reference name file
-    fn tip_source(ref_name: &str) -> Option<git2::Oid> {
+    fn tip_source_commit(ref_name: &str) -> Option<git2::Oid> {
         ref_name.rsplit('/').next().and_then(|s| git2::Oid::from_str(s).ok())
     }
 
@@ -63,7 +63,7 @@ impl SlugGit {
 
         let mut lines = Vec::new();
         for name in names {
-            let tip_source = match Self::tip_source(&name) {
+            let tip_source = match Self::tip_source_commit(&name) {
                 Some(oid) => oid,
                 None => continue,
             };
@@ -392,5 +392,104 @@ pub fn clean() -> Result<Vec<String>, SlugError> {
         }
     }
 
+    Ok(removed)
+}
+
+// True if source commit is reachable from any branch tip
+fn source_reachable(repo: &git2::Repository, branch_tips: &[git2::Oid], source: git2::Oid) -> bool {
+    for &tip in branch_tips {
+        if let Ok(base) = repo.merge_base(tip, source) {
+            if base == source {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+// Bring Slug tip refs back in line with the branches that still exist
+// Returns removed ref names
+pub fn prune() -> Result<Vec<String>, SlugError> {
+    let repo = git2::Repository::discover(".")?;
+
+    // Collect Git branch tips to test reachability against
+    let mut branch_tips = Vec::new();
+    for glob in ["refs/heads/*", "refs/remotes/origin/*"] {
+        let names: Vec<String> = repo.references_glob(glob)?
+            .names()
+            .filter_map(|name| name.ok().map(String::from))
+            .collect();
+        for name in names {
+            if let Ok(commit) = repo.find_reference(&name).and_then(|r| r.peel_to_commit()) {
+                branch_tips.push(commit.id());
+            }
+        }
+    }
+
+    // Refuse to prune when no branches are visible (detached CI checkout):
+    if branch_tips.is_empty() {
+        return Err(SlugError::parsing("no branches found, refusing to prune"));
+    }
+
+    let mut removed = Vec::new();
+    // Shared and local stores hold distinct commits so resolve each separately
+    for prefix in [SHARED_PREFIX, LOCAL_PREFIX] {
+        let glob = format!("{}/*", prefix);
+        let line_names: Vec<String> = repo.references_glob(&glob)?
+            .names()
+            .filter_map(|name| name.ok().map(String::from))
+            .collect();
+
+        // For each line walk Slug records from the tip down to the first one
+        // whose source commit is still reachable, make that record the new tip
+        let mut anchors: Vec<(git2::Oid, String)> = Vec::new();
+        for name in &line_names {
+            let tip = match repo.find_reference(name).and_then(|r| r.peel_to_commit()) {
+                Ok(commit) => commit,
+                Err(_) => continue,
+            };
+            let mut current = Some(tip);
+            while let Some(record) = current {
+                if let Some(source) = SlugGit::slug_commit_target(&record) {
+                    if let Ok(oid) = git2::Oid::from_str(&source) {
+                        if source_reachable(&repo, &branch_tips, oid) {
+                            anchors.push((record.id(), source));
+                            break;
+                        }
+                    }
+                }
+                current = record.parent(0).ok();
+            }
+        }
+
+        // Keep only the maximal anchors 
+        let mut desired: Vec<(String, git2::Oid)> = Vec::new();
+        for (oid, source) in &anchors {
+            if desired.iter().any(|(_, kept)| kept == oid) {
+                continue; // same record reached from two lines
+            }
+            // if another anchor descends from this one, its ref will keep this record alive
+            let subsumed = anchors.iter().any(|(other, _)| {
+                other != oid && repo.graph_descendant_of(*other, *oid).unwrap_or(false)
+            });
+            if !subsumed {
+                desired.push((format!("{}/{}", prefix, source), *oid));
+            }
+        }
+
+        // Delete every existing ref that is not desired (unreachable)
+        for name in &line_names {
+            if !desired.iter().any(|(desired_name, _)| desired_name == name) {
+                repo.find_reference(name)?.delete()?;
+                removed.push(name.clone());
+            }
+        }
+        // Create any desired ref that does not exist
+        for (name, oid) in &desired {
+            if repo.find_reference(name).is_err() {
+                repo.reference(name, *oid, true, "slug prune")?;
+            }
+        }
+    }
     Ok(removed)
 }
