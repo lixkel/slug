@@ -2,10 +2,10 @@ use git2;
 use crate::errors::SlugError;
 
 
-// Per branch history under refs/<prefix>/<branch>, outside refs/heads
+// History lines under refs/<prefix>/<tip-source-sha>, outside refs/heads
 const SHARED_PREFIX: &str = "refs/slug";        // intended to be pushed in CI
 const LOCAL_PREFIX: &str = "refs/slug-local";   // never pushed, stays local
-// Notes mapping evaluated commits to their slug data commit
+// Notes mapping evaluated commits to their record
 const SHARED_NOTES_REF: &str = "refs/notes/slug-shared";
 const LOCAL_NOTES_REF: &str = "refs/notes/slug-local";
 
@@ -17,12 +17,12 @@ pub struct SlugGit {
 
 
 impl SlugGit {
-    // Shared history handle for the current branch
+    // Shared history handle
     pub fn shared() -> Result<Self, SlugError> {
         Self::open(SHARED_PREFIX, SHARED_NOTES_REF)
     }
 
-    // Local history handle for the current branch
+    // Local history handle
     pub fn local() -> Result<Self, SlugError> {
         Self::open(LOCAL_PREFIX, LOCAL_NOTES_REF)
     }
@@ -38,13 +38,13 @@ impl SlugGit {
     }
 
     // Inverse of tip_ref, the source commit hash encoded in a reference name file
-    fn tip_source_commit(ref_name: &str) -> Option<git2::Oid> {
+    fn tip_source(ref_name: &str) -> Option<git2::Oid> {
         ref_name.rsplit('/').next().and_then(|s| git2::Oid::from_str(s).ok())
     }
 
-    // Delete reference for passed slug record line, if exists
+    // Delete reference for passed line, if exists
     fn delete_tip_ref(&self, slug_commit: &git2::Commit) -> Result<(), SlugError> {
-        if let Some(source) = Self::slug_commit_target(slug_commit) {
+        if let Some(source) = Self::record_source(slug_commit) {
             if let Ok(mut tip) = self.repo.find_reference(&self.tip_ref(&source)) {
                 tip.delete()?;
             }
@@ -52,8 +52,8 @@ impl SlugGit {
         Ok(())
     }
 
-    // Find all Slug record lines whose source commit descends from `commit_hash`
-    fn slug_descendant_lines(&self, commit_hash: &str) -> Result<Vec<String>, SlugError> {
+    // Find all lines whose source commit descends from `commit_hash`
+    fn descendant_lines(&self, commit_hash: &str) -> Result<Vec<String>, SlugError> {
         let ancestor = git2::Oid::from_str(commit_hash)?;
         let glob = format!("{}/*", self.ref_prefix);
         let names: Vec<String> = self.repo.references_glob(&glob)?
@@ -63,7 +63,7 @@ impl SlugGit {
 
         let mut lines = Vec::new();
         for name in names {
-            let tip_source = match Self::tip_source_commit(&name) {
+            let tip_source = match Self::tip_source(&name) {
                 Some(oid) => oid,
                 None => continue,
             };
@@ -78,14 +78,14 @@ impl SlugGit {
         Ok(lines)
     }
 
-    // Find closest slug record commit by following the current HEADs ancestors
-    // None = no ancestor was benchmarked 
-    pub fn resolve_ancestor_commit(&self) -> Result<Option<git2::Commit<'_>>, SlugError> {
+    // Find closest record by following the current HEADs ancestors
+    // None = no ancestor was benchmarked
+    pub fn resolve_base_record(&self) -> Result<Option<git2::Commit<'_>>, SlugError> {
         let head = self.repo.head()?.peel_to_commit()?;
         // Start looking from HEAD parent we are not interested in other results for this commit
         let mut current = head.parent(0).ok();
         while let Some(commit) = current {
-            if let Some(slug_oid) = self.slug_find_record_commit(commit.id())? {
+            if let Some(slug_oid) = self.find_record(commit.id())? {
                 return Ok(Some(self.repo.find_commit(slug_oid)?));
             }
             current = commit.parent(0).ok();
@@ -93,8 +93,8 @@ impl SlugGit {
         Ok(None)
     }
 
-    // Find if commit with this oid (hash) have note pointing to its slug record commit
-    fn slug_find_record_commit(&self, oid: git2::Oid) -> Result<Option<git2::Oid>, SlugError> {
+    // Find if commit with this oid (hash) has a note pointing to its record
+    fn find_record(&self, oid: git2::Oid) -> Result<Option<git2::Oid>, SlugError> {
         match self.repo.find_note(Some(&self.notes_ref), oid) {
             Ok(note) => {
                 let parsed = note.message()
@@ -109,46 +109,46 @@ impl SlugGit {
 
     // Read the Slug record file for a test from ancestor commit
     pub fn read_base_file(&self, name: &str) -> Result<Option<Vec<u8>>, SlugError> {
-        match self.resolve_ancestor_commit()? {
-            Some(commit) => self.read_file_from(&commit, name),
+        match self.resolve_base_record()? {
+            Some(commit) => self.read_record_file(&commit, name),
             None => Ok(None),
         }
     }
 
     // Does the Slug record file for this test already exists
     pub fn base_file_exists(&self, name: &str) -> Result<bool, SlugError> {
-        match self.resolve_ancestor_commit()? {
+        match self.resolve_base_record()? {
             Some(commit) => Ok(commit.tree()?.get_name(name).is_some()),
             None => Ok(false),
         }
     }
 
-    // Record this commit's test results and slide it into the branch's data chain at
+    // Record this commit's test results and slide it into its line at
     // position dictated by source ancestry of original commit, rewriting every benchmarked
     // descendant so the new row appears in its test file too
     // If record for this commit already exists we replace it
     // Returns (source_commit, data_commit) pairs for every commit written
-    pub fn slug_record_data(&self, commit_hash: &str, updates: &[(String, String)]) -> Result<Vec<(String, String)>, SlugError> {
-        let base = self.resolve_ancestor_commit()?;
+    pub fn record_data(&self, commit_hash: &str, updates: &[(String, String)]) -> Result<Vec<(String, String)>, SlugError> {
+        let base = self.resolve_base_record()?;
 
         // Base this commit's data on top of its nearest benchmarked ancestor
         let base_tree = match &base {
             Some(commit) => Some(commit.tree()?),
             None => None,
         };
-        let new_oid = self.slug_write_record_commit(commit_hash, base.as_ref(), base_tree.as_ref(), updates)?;
+        let new_oid = self.write_record(commit_hash, base.as_ref(), base_tree.as_ref(), updates)?;
         let mut notes = vec![(commit_hash.to_string(), new_oid.to_string())];
 
-        // Slug record lines whose tip commit descends from this commit need new
+        // Lines whose tip descends from this commit need new
         // data spliced in, linear branch yields at most one
         // TODO: more than one is benchmarked source fork which is not supported
-        let lines = self.slug_descendant_lines(commit_hash)?;
+        let lines = self.descendant_lines(commit_hash)?;
         if lines.len() > 1 {
             return Err(SlugError::parsing("commit has multiple benchmarked descendant lines (merge/fork not supported)"));
         }
 
         match lines.first() {
-            // No record line descends from this commit, this commit becomes a new leaf of its record line
+            // No line descends from this commit, this commit becomes a new leaf of its line
             None => {
                 self.repo.reference(&self.tip_ref(commit_hash), new_oid, true, "slug record")?;
                 // If the old base was a leaf, this commit becomes anchor
@@ -169,7 +169,7 @@ impl SlugGit {
                     }
                     let parent = commit.parent(0).ok();
                     // Skip an existing record for this same commit, it will be replaced
-                    let already_recorded = Self::slug_commit_target(&commit).as_deref() == Some(commit_hash);
+                    let already_recorded = Self::record_source(&commit).as_deref() == Some(commit_hash);
                     if !already_recorded {
                         descendants.push(commit);
                     }
@@ -179,14 +179,14 @@ impl SlugGit {
 
                 let mut prev = self.repo.find_commit(new_oid)?;
                 for descendant in &descendants {
-                    let target = Self::slug_commit_target(descendant)
-                        .ok_or_else(|| SlugError::parsing("Slug record commit without Target-Commit"))?;
-                    let rebuilt = self.slug_replay_record_commit(descendant, &target, &prev)?;
-                    notes.push((target, rebuilt.to_string()));
+                    let source = Self::record_source(descendant)
+                        .ok_or_else(|| SlugError::parsing("record without Source-Commit"))?;
+                    let rebuilt = self.replay_record(descendant, &source, &prev)?;
+                    notes.push((source, rebuilt.to_string()));
                     prev = self.repo.find_commit(rebuilt)?;
                 }
 
-                // Change the slug record line reference to the newly rebuilt tip
+                // Change the line reference to the newly rebuilt tip
                 self.repo.reference(line_ref, prev.id(), true, "slug record")?;
             }
         }
@@ -194,8 +194,8 @@ impl SlugGit {
         Ok(notes)
     }
 
-    // Seed a data commit's tree from `base_tree`, append each test's new rows and commit it parented on `parent`
-    fn slug_write_record_commit(&self, commit_hash: &str, parent: Option<&git2::Commit>, base_tree: Option<&git2::Tree>, updates: &[(String, String)]) -> Result<git2::Oid, SlugError> {
+    // Seed a record's tree from `base_tree`, append each test's new rows and commit it parented on `parent`
+    fn write_record(&self, commit_hash: &str, parent: Option<&git2::Commit>, base_tree: Option<&git2::Tree>, updates: &[(String, String)]) -> Result<git2::Oid, SlugError> {
         let mut tree_builder = self.repo.treebuilder(base_tree)?;
         for (test_name, test_data) in updates {
             let mut content = String::new();
@@ -210,21 +210,21 @@ impl SlugGit {
         }
         let tree_oid = tree_builder.write()?;
         let tree = self.repo.find_tree(tree_oid)?;
-        self.commit_data(commit_hash, &tree, parent)
+        self.commit_record(commit_hash, &tree, parent)
     }
 
     // Rebuild `original` on top of `prev`, keep prev's tree and reappend only the rows `original` itself measured
-    fn slug_replay_record_commit(&self, original: &git2::Commit, target: &str, prev: &git2::Commit) -> Result<git2::Oid, SlugError> {
+    fn replay_record(&self, original: &git2::Commit, source: &str, prev: &git2::Commit) -> Result<git2::Oid, SlugError> {
         let prev_tree = prev.tree()?;
         let mut tree_builder = self.repo.treebuilder(Some(&prev_tree))?;
-        // Loop through files in commit (slug records for each test)
+        // Loop through files in commit (records for each test)
         for entry in original.tree()?.iter() {
             let name = match entry.name() {
                 Some(name) => name.to_string(),
                 None => continue,
             };
             let original_content = self.blob_string(entry.id())?;
-            let own = Self::own_rows(&original_content, target);
+            let own = Self::own_rows(&original_content, source);
             if own.is_empty() {
                 continue; // this test is untouched in this record
             }
@@ -245,13 +245,13 @@ impl SlugGit {
         }
         let tree_oid = tree_builder.write()?;
         let tree = self.repo.find_tree(tree_oid)?;
-        self.commit_data(target, &tree, Some(prev))
+        self.commit_record(source, &tree, Some(prev))
     }
 
-    // Commit a Slug data tree for `commit_hash`, optionally parented.
-    fn commit_data(&self, commit_hash: &str, tree: &git2::Tree, parent: Option<&git2::Commit>) -> Result<git2::Oid, SlugError> {
+    // Commit a record tree for `commit_hash`, optionally parented.
+    fn commit_record(&self, commit_hash: &str, tree: &git2::Tree, parent: Option<&git2::Commit>) -> Result<git2::Oid, SlugError> {
         let sig = git2::Signature::now("Slug", "slug@slug.internal")?;
-        let message = format!("Benchmark data for {}\n\nTarget-Commit: {}", commit_hash, commit_hash);
+        let message = format!("Benchmark data for {}\n\nSource-Commit: {}", commit_hash, commit_hash);
         let parents: Vec<&git2::Commit> = parent.into_iter().collect();
         Ok(self.repo.commit(None, &sig, &sig, &message, tree, &parents)?)
     }
@@ -290,24 +290,24 @@ impl SlugGit {
         }
     }
 
-    // Find closest Slug record commit for HEAD
+    // Find closest record for HEAD
     // Returns HEAD's own record if it exists, else its nearest benchmarked ancestor's, None if nothing recorded
-    fn head_record_commit(&self) -> Result<Option<git2::Commit<'_>>, SlugError> {
+    fn head_record(&self) -> Result<Option<git2::Commit<'_>>, SlugError> {
         let head = self.repo.head()?.peel_to_commit()?;
-        if let Some(oid) = self.slug_find_record_commit(head.id())? {
+        if let Some(oid) = self.find_record(head.id())? {
             return Ok(Some(self.repo.find_commit(oid)?));
         }
-        self.resolve_ancestor_commit()
+        self.resolve_base_record()
     }
 
-    // Decoded a blob as UTF-8 text
+    // Decode a blob as UTF-8 text
     fn blob_string(&self, oid: git2::Oid) -> Result<String, SlugError> {
         let blob = self.repo.find_blob(oid)?;
         Ok(String::from_utf8(blob.content().to_vec())?)
     }
 
     // Read tests historical records from this commit
-    fn read_file_from(&self, commit: &git2::Commit, name: &str) -> Result<Option<Vec<u8>>, SlugError> {
+    fn read_record_file(&self, commit: &git2::Commit, name: &str) -> Result<Option<Vec<u8>>, SlugError> {
         let tree = commit.tree()?;
         let entry = match tree.get_name(name) {
             Some(entry) => entry,
@@ -318,7 +318,7 @@ impl SlugGit {
 
     // Full recorded history starting from HEAD
     pub fn read_all_history(&self) -> Result<Vec<(String, String)>, SlugError> {
-        let commit = match self.head_record_commit()? {
+        let commit = match self.head_record()? {
             Some(commit) => commit,
             None => return Ok(Vec::new()),
         };
@@ -335,19 +335,19 @@ impl SlugGit {
         Ok(out)
     }
 
-    // Determine source commit from Slug commit's Target-Commit trailer
-    fn slug_commit_target(commit: &git2::Commit) -> Option<String> {
+    // Determine source commit from record's Source-Commit trailer
+    fn record_source(commit: &git2::Commit) -> Option<String> {
         commit.message()?
             .lines()
-            .find_map(|line| line.strip_prefix("Target-Commit: "))
+            .find_map(|line| line.strip_prefix("Source-Commit: "))
             .map(|s| s.trim().to_string())
     }
 
-    // Data rows in record files associated with `target`
-    fn own_rows(content: &str, target: &str) -> Vec<String> {
+    // Data rows in record files associated with `source`
+    fn own_rows(content: &str, source: &str) -> Vec<String> {
         content
             .lines()
-            .filter(|line| line.rsplit(',').next().map(str::trim) == Some(target))
+            .filter(|line| line.rsplit(',').next().map(str::trim) == Some(source))
             .map(|line| line.to_string())
             .collect()
     }
@@ -368,7 +368,7 @@ pub fn clean() -> Result<Vec<String>, SlugError> {
     let repo = git2::Repository::discover(".")?;
     let mut removed = Vec::new();
 
-    // One data ref per branch under each prefix
+    // One ref per line under each prefix
     for glob in [format!("{}/*", SHARED_PREFIX), format!("{}/*", LOCAL_PREFIX)] {
         let names: Vec<String> = repo.references_glob(&glob)?
             .names()
@@ -407,7 +407,7 @@ fn source_reachable(repo: &git2::Repository, branch_tips: &[git2::Oid], source: 
     false
 }
 
-// Bring Slug tip refs back in line with the branches that still exist
+// Bring tip refs back in line with the branches that still exist
 // Returns removed ref names
 pub fn prune() -> Result<Vec<String>, SlugError> {
     let repo = git2::Repository::discover(".")?;
@@ -440,7 +440,7 @@ pub fn prune() -> Result<Vec<String>, SlugError> {
             .filter_map(|name| name.ok().map(String::from))
             .collect();
 
-        // For each line walk Slug records from the tip down to the first one
+        // For each line walk records from the tip down to the first one
         // whose source commit is still reachable, make that record the new tip
         let mut anchors: Vec<(git2::Oid, String)> = Vec::new();
         for name in &line_names {
@@ -450,7 +450,7 @@ pub fn prune() -> Result<Vec<String>, SlugError> {
             };
             let mut current = Some(tip);
             while let Some(record) = current {
-                if let Some(source) = SlugGit::slug_commit_target(&record) {
+                if let Some(source) = SlugGit::record_source(&record) {
                     if let Ok(oid) = git2::Oid::from_str(&source) {
                         if source_reachable(&repo, &branch_tips, oid) {
                             anchors.push((record.id(), source));
