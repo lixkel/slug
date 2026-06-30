@@ -135,7 +135,9 @@ pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<Vec<PerfData>, Sl
         "pyperf" => [(pyperf_2_7_0, "2.7.0")],
         "go-testing" => [(go_testing_1_26_4, "1.26.4")],
         "criterion" => [(criterion_0_5_1, "0.5.1")],
-        "google-benchmark" => [(google_benchmark_1_8_3, "1.8.3")]
+        "google-benchmark" => [(google_benchmark_1_8_3, "1.8.3")],
+        "jmh" => [(jmh_1_37_0, "1.37.0")],
+        "benchmarkdotnet" => [(benchmarkdotnet_0_14_0, "0.14.0")]
     });
 
     let versions = parsers.get(&lib.name)

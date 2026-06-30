@@ -174,3 +174,32 @@ pub fn pyperf_2_7_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
         Metric::new("stddev", "stddev", "sunit"),
     ])
 }
+
+pub fn jmh_1_37_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
+    // JMH prints a summary table at the end, one line per benchmark:
+    //   Benchmark         Mode  Cnt      Score      Error  Units
+    //   MyBenchmark.fib   avgt   25  23516.718 ± 1096.241  ns/op
+    let regex = Regex::new(
+        r"(?m)^(?P<name>\S+)\s+avgt\s+\d+\s+(?P<score>[\d.,]+)\s+±\s+(?P<error>[\d.,]+)\s+(?P<unit>\S+)\s*$"
+    )?;
+
+    parse_rows(s, &regex, &[
+        Metric::new("mean", "score", "unit"),
+        Metric::new("error", "error", "unit"),
+    ])
+}
+
+pub fn benchmarkdotnet_0_14_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
+    // BenchmarkDotNet prints a markdown summary table, one row per benchmark:
+    //   | Method    | Mean      | Error     | StdDev    |
+    //   | FibBench  | 24.783 us | 0.1982 us | 0.2646 us |
+    let regex = Regex::new(
+        r"(?m)^\|\s*(?P<name>\w+)\s*\|\s*(?P<mean>[\d.,]+)\s+(?P<munit>\w+)\s*\|\s*(?P<error>[\d.,]+)\s+(?P<eunit>\w+)\s*\|\s*(?P<stddev>[\d.,]+)\s+(?P<sunit>\w+)\s*\|"
+    )?;
+
+    parse_rows(s, &regex, &[
+        Metric::new("mean", "mean", "munit"),
+        Metric::new("error", "error", "eunit"),
+        Metric::new("stddev", "stddev", "sunit"),
+    ])
+}
