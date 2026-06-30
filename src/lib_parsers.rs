@@ -14,15 +14,19 @@
 //                 criterion). Add language prefix only when the library's own
 //                 name is generic (Go's `testing` -> `go-testing`).
 //
-// Metric convention
-// -----------------
-// Every metric must be stored through PerfData::record, which normalizes the
-// value into nanoseconds via the unit registry. Never insert into the map
-// directly. Always emit a "mean" key: the statistical tests (z-score, EWMA)
+// Which metrics to record
+// ------------------------
+// The most important metric is "mean" the statistical tests (z-score, EWMA)
 // depend on it. Save every metric the tool prints (lower, upper, stddev, ...),
-// as there might be statistical tests in the future which could use them.
+// as future statistical tests could use them.
 //
-// Parser must fail loudly e.g. Err(Parsing("No matches found")).
+// Writing a parser
+// ----------------
+// Give parse_rows a regex matching one row (a `name` group for the benchmark
+// name, plus named group for each number) and list of Metrics (see
+// Metric::new / Metric::fixed below), parse_rows does the rest
+//
+// See google-benchmark below as a typical example
 
 use crate::git;
 use crate::parser::PerfData;
@@ -30,33 +34,59 @@ use crate::errors::SlugError;
 
 use regex::Regex;
 
-pub fn pytest_7_3_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
-    // pytest-benchmark prints the time unit once in header
-    let unit_re = Regex::new(r"\(time in (?P<unit>\w+)\)")?;
-    let unit = unit_re.captures(s)
-        .map(|c| c["unit"].to_string())
-        .ok_or_else(|| SlugError::Parsing("Could not find time unit in pytest-benchmark header".to_string()))?;
+// Where a Metric's unit comes from:
+//   Group - unit sits in the row, per match -pass- the capture group holding it
+//   Fixed - unit is fixed/read from a header -pass- it as an owned string
+enum Unit {
+    Group(&'static str), // capture group name, e.g. "tunit"
+    Fixed(String),       // fixed unit, e.g. read once from a header
+}
 
-    // We expect 5 columns: min, max, mean, stddev, median
-    // The regex matches numbers that look like this:
-    // "12.34"
-    // "1,234.56"           (can have commas)
-    // "12.34 (1.0)"        (pytest sometimes adds extra stuff in parentheses)
-    let num = r"([\d,]+\.\d+)(?:\s+\([\d.]+\))?";
-    let row_re = Regex::new(&format!(r"(?m)^\s*(?P<name>\w+)\s+{n}\s+{n}\s+{n}\s+{n}\s+{n}", n = num))?;
+// One number to pull out of each match, store it under `key`, read the value
+// from capture group `value`, with unit resolved from `unit`
+// Keys and group names are always known beforehand, so they are 'static'
+struct Metric {
+    key: &'static str,
+    value: &'static str,
+    unit: Unit,
+}
 
-    let metrics = ["min", "max", "mean", "stddev", "median"];
+impl Metric {
+    // Unit read from a capture group, per match
+    fn new(key: &'static str, value: &'static str, unit_group: &'static str) -> Self {
+        Metric { key, value, unit: Unit::Group(unit_group) }
+    }
+
+    // Unit known up front (e.g. read once from a header)
+    fn fixed(key: &'static str, value: &'static str, unit: impl Into<String>) -> Self {
+        Metric { key, value, unit: Unit::Fixed(unit.into()) }
+    }
+}
+
+fn group<'a>(caps: &'a regex::Captures, name: &str) -> Result<&'a str, SlugError> {
+    caps.name(name)
+        .map(|m| m.as_str())
+        .ok_or_else(|| SlugError::parsing(format!("capture group '{}' not found", name)))
+}
+
+// Shared parser skeleton, loops through regex matches and build one PerfData
+// per match, fail if nothing matched
+// Regex must expose a `name` group plus a group for every Metric's value/unit
+fn parse_rows(s: &str, re: &Regex, metrics: &[Metric]) -> Result<Vec<PerfData>, SlugError> {
     let commit_hash = git::get_commit_hash()?;
     let mut results = Vec::new();
 
-    for caps in row_re.captures_iter(s) {
-        let mut data = PerfData::new(&caps["name"], &commit_hash);
+    for caps in re.captures_iter(s) {
+        let mut data = PerfData::new(group(&caps, "name")?, &commit_hash);
 
-        for (i, metric) in metrics.iter().enumerate() {
-            // Actual numbers start from group 2
-            let raw = caps.get(i + 2).unwrap().as_str().replace(',', "");
-            let value: f64 = raw.parse()?;
-            data.record(metric, value, &unit)?;
+        // Walk rows
+        for m in metrics {
+            let value: f64 = group(&caps, m.value)?.replace(',', "").parse()?;
+            let unit = match &m.unit {
+                Unit::Group(g) => group(&caps, g)?,
+                Unit::Fixed(u) => u.as_str(),
+            };
+            data.record(m.key, value, unit)?;
         }
 
         results.push(data);
@@ -69,6 +99,29 @@ pub fn pytest_7_3_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
     Ok(results)
 }
 
+pub fn pytest_7_3_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
+    // pytest-benchmark prints the time unit once in the header, then a table:
+    //   Name (time in us)   Min      Max      Mean    StdDev   Median ...
+    //   test_fib            600.44   1,160.78 710.69  43.09    711.07 ...
+    // Numbers can contain many commas
+    let unit_re = Regex::new(r"\(time in (?P<unit>\w+)\)")?;
+    let unit = unit_re.captures(s)
+        .map(|c| c["unit"].to_string())
+        .ok_or_else(|| SlugError::Parsing("Could not find time unit in pytest-benchmark header".to_string()))?;
+
+    // We expect 5 columns: min, max, mean, stddev, median
+    let col = |g: &str| format!(r"(?P<{g}>[\d,]+\.\d+)(?:\s+\([\d.]+\))?");
+    let row_re = Regex::new(&format!(
+        r"(?m)^\s*(?P<name>\w+)\s+{}\s+{}\s+{}\s+{}\s+{}",
+        col("min"), col("max"), col("mean"), col("stddev"), col("median")
+    ))?;
+
+    let cols = ["min", "max", "mean", "stddev", "median"];
+    let metrics = cols.map(|c| Metric::fixed(c, c, &unit));
+
+    parse_rows(s, &row_re, &metrics)
+}
+
 pub fn go_testing_1_26_4(s: &str) -> Result<Vec<PerfData>, SlugError> {
     // go testing prints one line per benchmark:
     //   BenchmarkFib-16   37124   32459 ns/op   0 B/op   0 allocs/op
@@ -77,24 +130,7 @@ pub fn go_testing_1_26_4(s: &str) -> Result<Vec<PerfData>, SlugError> {
         r"(?m)^(?P<name>Benchmark\w+)(?:-\d+)?\s+\d+\s+(?P<value>[\d.]+)\s+(?P<unit>\S+/op)"
     )?;
 
-    let commit_hash = git::get_commit_hash()?;
-    let mut results = Vec::new();
-
-    for found in regex.captures_iter(s) {
-        let mut data = PerfData::new(&found["name"], &commit_hash);
-
-        let value: f64 = found["value"].parse()?;
-
-        data.record("mean", value, &found["unit"])?;
-
-        results.push(data);
-    }
-
-    if results.is_empty() {
-        return Err(SlugError::Parsing("No matches found".to_string()));
-    }
-
-    Ok(results)
+    parse_rows(s, &regex, &[Metric::new("mean", "value", "unit")])
 }
 
 pub fn criterion_0_5_1(s: &str) -> Result<Vec<PerfData>, SlugError> {
@@ -105,24 +141,11 @@ pub fn criterion_0_5_1(s: &str) -> Result<Vec<PerfData>, SlugError> {
         r"(?m)^(?P<name>\w+)\s+time:\s+\[(?P<low>[\d.]+) (?P<lowunit>\S+) (?P<mid>[\d.]+) (?P<midunit>\S+) (?P<high>[\d.]+) (?P<highunit>\S+)\]"
     )?;
 
-    let commit_hash = git::get_commit_hash()?;
-    let mut results = Vec::new();
-
-    for found in regex.captures_iter(s) {
-        let mut data = PerfData::new(&found["name"], &commit_hash);
-
-        data.record("lower", found["low"].parse()?, &found["lowunit"])?;
-        data.record("mean", found["mid"].parse()?, &found["midunit"])?;
-        data.record("upper", found["high"].parse()?, &found["highunit"])?;
-
-        results.push(data);
-    }
-
-    if results.is_empty() {
-        return Err(SlugError::Parsing("No matches found".to_string()));
-    }
-
-    Ok(results)
+    parse_rows(s, &regex, &[
+        Metric::new("lower", "low", "lowunit"),
+        Metric::new("mean", "mid", "midunit"),
+        Metric::new("upper", "high", "highunit"),
+    ])
 }
 
 pub fn google_benchmark_1_8_3(s: &str) -> Result<Vec<PerfData>, SlugError> {
@@ -133,23 +156,10 @@ pub fn google_benchmark_1_8_3(s: &str) -> Result<Vec<PerfData>, SlugError> {
         r"(?m)^(?P<name>\S+)\s+(?P<time>[\d.]+)\s+(?P<tunit>\w+)\s+(?P<cpu>[\d.]+)\s+(?P<cunit>\w+)\s+\d+\s*$"
     )?;
 
-    let commit_hash = git::get_commit_hash()?;
-    let mut results = Vec::new();
-
-    for found in regex.captures_iter(s) {
-        let mut data = PerfData::new(&found["name"], &commit_hash);
-
-        data.record("mean", found["time"].parse()?, &found["tunit"])?;
-        data.record("cpu", found["cpu"].parse()?, &found["cunit"])?;
-
-        results.push(data);
-    }
-
-    if results.is_empty() {
-        return Err(SlugError::Parsing("No matches found".to_string()));
-    }
-
-    Ok(results)
+    parse_rows(s, &regex, &[
+        Metric::new("mean", "time", "tunit"),
+        Metric::new("cpu", "cpu", "cunit"),
+    ])
 }
 
 pub fn pyperf_2_7_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
@@ -159,24 +169,8 @@ pub fn pyperf_2_7_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
         r"(?P<name>\w+): Mean \+- std dev: (?P<mean>\d+(?:\.\d+)?) (?P<munit>\w+) \+- (?P<stddev>\d+(?:\.\d+)?) (?P<sunit>\w+)"
     )?;
 
-    let commit_hash = git::get_commit_hash()?;
-    let mut results = Vec::new();
-
-    for found in regex.captures_iter(s) {
-        let mut data = PerfData::new(&found["name"], &commit_hash);
-
-        let mean: f64 = found["mean"].parse()?;
-        let stddev: f64 = found["stddev"].parse()?;
-
-        data.record("mean", mean, &found["munit"])?;
-        data.record("stddev", stddev, &found["sunit"])?;
-
-        results.push(data);
-    }
-
-    if results.is_empty() {
-        return Err(SlugError::Parsing("No matches found".to_string()));
-    }
-
-    Ok(results)
+    parse_rows(s, &regex, &[
+        Metric::new("mean", "mean", "munit"),
+        Metric::new("stddev", "stddev", "sunit"),
+    ])
 }

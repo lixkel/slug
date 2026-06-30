@@ -1,6 +1,13 @@
 use crate::errors::SlugError;
 use std::collections::HashMap;
 
+// Slug has single canonical storage unit Nanoseconds. Every recorded metric
+// is normalized to ns here so that values from different tools (and unit
+// spellings) are directly comparable. This is the only normalization point
+// that should be used
+//
+// Unknown units fail loudly
+
 // Unit registry
 fn unit_table() -> HashMap<&'static str, f64> {
     let mut t = HashMap::new();
