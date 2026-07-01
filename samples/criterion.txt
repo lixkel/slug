@@ -1,0 +1,12 @@
+fib                     time:   [22.624 µs 22.702 µs 22.775 µs]
+Found 12 outliers among 100 measurements (12.00%)
+  6 (6.00%) low severe
+  5 (5.00%) low mild
+  1 (1.00%) high mild
+
+sort                    time:   [339.06 ns 341.86 ns 344.76 ns]
+Found 16 outliers among 100 measurements (16.00%)
+  8 (8.00%) low mild
+  5 (5.00%) high mild
+  3 (3.00%) high severe
+

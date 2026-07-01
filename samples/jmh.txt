@@ -1,0 +1,225 @@
+# JMH version: 1.37
+# VM version: JDK 26.0.1, OpenJDK 64-Bit Server VM, 26.0.1
+# VM invoker: /usr/lib/jvm/java-26-openjdk/bin/java
+# VM options: <none>
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 5 iterations, 10 s each
+# Measurement: 5 iterations, 10 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: bench.MyBenchmark.fib
+
+# Run progress: 0.00% complete, ETA 00:16:40
+# Fork: 1 of 5
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/home/user/perf-test-libs/java/jmh/target/benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 29335.655 ns/op
+# Warmup Iteration   2: 26545.073 ns/op
+# Warmup Iteration   3: 26040.970 ns/op
+# Warmup Iteration   4: 24310.256 ns/op
+# Warmup Iteration   5: 23267.581 ns/op
+Iteration   1: 23363.829 ns/op
+Iteration   2: 23618.911 ns/op
+Iteration   3: 22698.623 ns/op
+Iteration   4: 22760.818 ns/op
+Iteration   5: 22505.210 ns/op
+
+# Run progress: 10.00% complete, ETA 00:15:02
+# Fork: 2 of 5
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/home/user/perf-test-libs/java/jmh/target/benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 22494.157 ns/op
+# Warmup Iteration   2: 22600.280 ns/op
+# Warmup Iteration   3: 22798.331 ns/op
+# Warmup Iteration   4: 22493.438 ns/op
+# Warmup Iteration   5: 22457.683 ns/op
+Iteration   1: 22496.967 ns/op
+Iteration   2: 22753.622 ns/op
+Iteration   3: 23120.819 ns/op
+Iteration   4: 22870.080 ns/op
+Iteration   5: 22702.735 ns/op
+
+# Run progress: 20.00% complete, ETA 00:13:21
+# Fork: 3 of 5
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/home/user/perf-test-libs/java/jmh/target/benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 22494.422 ns/op
+# Warmup Iteration   2: 22652.529 ns/op
+# Warmup Iteration   3: 22664.783 ns/op
+# Warmup Iteration   4: 22716.755 ns/op
+# Warmup Iteration   5: 22678.241 ns/op
+Iteration   1: 22649.869 ns/op
+Iteration   2: 22684.372 ns/op
+Iteration   3: 22683.119 ns/op
+Iteration   4: 22706.517 ns/op
+Iteration   5: 22722.940 ns/op
+
+# Run progress: 30.00% complete, ETA 00:11:41
+# Fork: 4 of 5
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/home/user/perf-test-libs/java/jmh/target/benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 22716.066 ns/op
+# Warmup Iteration   2: 22769.050 ns/op
+# Warmup Iteration   3: 22712.859 ns/op
+# Warmup Iteration   4: 22702.915 ns/op
+# Warmup Iteration   5: 22698.431 ns/op
+Iteration   1: 22725.864 ns/op
+Iteration   2: 22707.066 ns/op
+Iteration   3: 22767.744 ns/op
+Iteration   4: 22922.947 ns/op
+Iteration   5: 23155.497 ns/op
+
+# Run progress: 40.00% complete, ETA 00:10:01
+# Fork: 5 of 5
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/home/user/perf-test-libs/java/jmh/target/benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 24041.435 ns/op
+# Warmup Iteration   2: 26198.794 ns/op
+# Warmup Iteration   3: 25939.354 ns/op
+# Warmup Iteration   4: 25756.989 ns/op
+# Warmup Iteration   5: 25249.172 ns/op
+Iteration   1: 24775.233 ns/op
+Iteration   2: 26725.102 ns/op
+Iteration   3: 26479.166 ns/op
+Iteration   4: 26851.228 ns/op
+Iteration   5: 26469.677 ns/op
+
+
+Result "bench.MyBenchmark.fib":
+  23516.718 ±(99.9%) 1096.241 ns/op [Average]
+  (min, avg, max) = (22496.967, 23516.718, 26851.228), stdev = 1463.451
+  CI (99.9%): [22420.477, 24612.959] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 26.0.1, OpenJDK 64-Bit Server VM, 26.0.1
+# VM invoker: /usr/lib/jvm/java-26-openjdk/bin/java
+# VM options: <none>
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 5 iterations, 10 s each
+# Measurement: 5 iterations, 10 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: bench.MyBenchmark.sort
+
+# Run progress: 50.00% complete, ETA 00:08:20
+# Fork: 1 of 5
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/home/user/perf-test-libs/java/jmh/target/benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 729.106 ns/op
+# Warmup Iteration   2: 709.596 ns/op
+# Warmup Iteration   3: 689.674 ns/op
+# Warmup Iteration   4: 718.110 ns/op
+# Warmup Iteration   5: 746.973 ns/op
+Iteration   1: 740.954 ns/op
+Iteration   2: 770.642 ns/op
+Iteration   3: 668.974 ns/op
+Iteration   4: 734.455 ns/op
+Iteration   5: 801.478 ns/op
+
+# Run progress: 60.00% complete, ETA 00:06:40
+# Fork: 2 of 5
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/home/user/perf-test-libs/java/jmh/target/benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 744.387 ns/op
+# Warmup Iteration   2: 657.019 ns/op
+# Warmup Iteration   3: 729.649 ns/op
+# Warmup Iteration   4: 690.570 ns/op
+# Warmup Iteration   5: 667.995 ns/op
+Iteration   1: 669.366 ns/op
+Iteration   2: 654.966 ns/op
+Iteration   3: 677.146 ns/op
+Iteration   4: 668.229 ns/op
+Iteration   5: 602.528 ns/op
+
+# Run progress: 70.00% complete, ETA 00:05:00
+# Fork: 3 of 5
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/home/user/perf-test-libs/java/jmh/target/benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 614.977 ns/op
+# Warmup Iteration   2: 665.291 ns/op
+# Warmup Iteration   3: 599.216 ns/op
+# Warmup Iteration   4: 571.949 ns/op
+# Warmup Iteration   5: 561.825 ns/op
+Iteration   1: 552.061 ns/op
+Iteration   2: 555.909 ns/op
+Iteration   3: 567.242 ns/op
+Iteration   4: 578.115 ns/op
+Iteration   5: 590.102 ns/op
+
+# Run progress: 80.00% complete, ETA 00:03:20
+# Fork: 4 of 5
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/home/user/perf-test-libs/java/jmh/target/benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 648.022 ns/op
+# Warmup Iteration   2: 822.080 ns/op
+# Warmup Iteration   3: 803.646 ns/op
+# Warmup Iteration   4: 798.990 ns/op
+# Warmup Iteration   5: 799.309 ns/op
+Iteration   1: 792.483 ns/op
+Iteration   2: 803.300 ns/op
+Iteration   3: 800.675 ns/op
+Iteration   4: 815.170 ns/op
+Iteration   5: 831.063 ns/op
+
+# Run progress: 90.00% complete, ETA 00:01:40
+# Fork: 5 of 5
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/home/user/perf-test-libs/java/jmh/target/benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 846.479 ns/op
+# Warmup Iteration   2: 841.984 ns/op
+# Warmup Iteration   3: 1158.592 ns/op
+# Warmup Iteration   4: 830.264 ns/op
+# Warmup Iteration   5: 814.779 ns/op
+Iteration   1: 875.847 ns/op
+Iteration   2: 847.230 ns/op
+Iteration   3: 825.976 ns/op
+Iteration   4: 873.962 ns/op
+Iteration   5: 831.324 ns/op
+
+
+Result "bench.MyBenchmark.sort":
+  725.168 ±(99.9%) 80.948 ns/op [Average]
+  (min, avg, max) = (552.061, 725.168, 875.847), stdev = 108.063
+  CI (99.9%): [644.220, 806.116] (assumes normal distribution)
+
+
+# Run complete. Total time: 00:16:42
+
+REMEMBER: The numbers below are just data. To gain reusable insights, you need to follow up on
+why the numbers are the way they are. Use profilers (see -prof, -lprof), design factorial
+experiments, perform baseline and negative tests that provide experimental control, make sure
+the benchmarking environment is safe on JVM/OS/HW level, ask for reviews from the domain experts.
+Do not assume the numbers tell you what you want them to tell.
+
+NOTE: Current JVM experimentally supports Compiler Blackholes, and they are in use. Please exercise
+extra caution when trusting the results, look into the generated code to check the benchmark still
+works, and factor in a small probability of new VM bugs. Additionally, while comparisons between
+different JVMs are already problematic, the performance difference caused by different Blackhole
+modes can be very significant. Please make sure you use the consistent Blackhole mode for comparisons.
+
+Benchmark         Mode  Cnt      Score      Error  Units
+MyBenchmark.fib   avgt   25  23516.718 ± 1096.241  ns/op
+MyBenchmark.sort  avgt   25    725.168 ±   80.948  ns/op
