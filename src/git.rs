@@ -42,7 +42,7 @@ impl SlugGit {
     // Read the Slug record note for this commit, None if it has none
     fn read_note(&self, oid: git2::Oid) -> Result<Option<String>, SlugError> {
         match self.repo.find_note(Some(&self.notes_ref), oid) {
-            Ok(note) => Ok(note.message().map(str::to_string)),
+            Ok(note) => Ok(note.message().ok().map(str::to_string)),
             Err(ref e) if e.code() == git2::ErrorCode::NotFound => Ok(None),
             Err(e) => Err(e.into()),
         }
