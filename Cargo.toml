@@ -10,3 +10,4 @@ regex = "1.12"
 git2 = "0.21"
 serde = { version = "1.0", features = ["derive"] }
 toml = "1"
+statrs = "0.18.0"

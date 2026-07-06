@@ -18,6 +18,7 @@ pub struct Config {
     pub policy: Policy,
     pub zscore: Zscore,
     pub ewma: Ewma,
+    pub confidence: Confidence,
 }
 
 // any = check1 OR check2 OR check3 OR ...
@@ -33,10 +34,11 @@ pub enum Policy {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            enabled: vec!["ewma".to_string(), "zscore".to_string()],
+            enabled: vec!["ewma".to_string(), "zscore".to_string(), "confidence".to_string()],
             policy: Policy::Any,
             zscore: Zscore::default(),
             ewma: Ewma::default(),
+            confidence: Confidence::default(),
         }
     }
 }
@@ -58,9 +60,24 @@ pub struct Ewma {
     pub window: usize,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct Confidence {
+    // flag a new measurement above 95% (level = 0.95) of other measurements
+    // higher level = fewer false alarms
+    pub level: f64,
+    pub window: usize,
+}
+
 impl Default for Zscore {
     fn default() -> Self {
         Zscore { threshold: 3.0, window: 100 }
+    }
+}
+
+impl Default for Confidence {
+    fn default() -> Self {
+        Confidence { level: 0.95, window: 100 }
     }
 }
 
@@ -73,7 +90,7 @@ impl Default for Ewma {
 impl Config {
     // Largest window any check needs
     pub fn max_window(&self) -> usize {
-        self.zscore.window.max(self.ewma.window)
+        self.zscore.window.max(self.ewma.window).max(self.confidence.window)
     }
 }
 
@@ -103,7 +120,7 @@ const EXAMPLE_CONFIG: &str = "\
 # Slug configuration
 
 # Which checks to run, and how to combine their verdicts.
-enabled = [\"ewma\", \"zscore\"]
+enabled = [\"ewma\", \"zscore\", \"confidence\"]
 # any = flag if ANY of enabled checks flag
 # all = flag only if ALL checks flag
 policy = \"any\"
@@ -119,6 +136,12 @@ window = 100
 alpha = 0.2
 # flag when the smoothed change exceeds this value (0.2 = 20%)
 threshold = 0.2
+window = 100
+
+[confidence]
+# flag a new measurement above 95% (level = 0.95) of other measurements
+# higher level = fewer false alarms
+level = 0.95
 window = 100
 ";
 

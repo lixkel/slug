@@ -18,6 +18,7 @@ pub struct CliOptions {
     pub zscore_threshold: f64,
     pub ewma_alpha: f64,
     pub ewma_threshold: f64,
+    pub confidence_level: f64,
 }
 
 pub enum PerfDataReader {
@@ -27,7 +28,7 @@ pub enum PerfDataReader {
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!(
-        "Usage: {prog} -t LIBRARY [-f FILE] [--local | --shared] [--record] [--zscore THRESHOLD] [--ewma ALPHA]\n       {prog} history [TEST] [--local | --shared]\n       {prog} setup\n       {prog} clean",
+        "Usage: {prog} -t LIBRARY [-f FILE] [--local | --shared] [--record] [--zscore THRESHOLD] [--ewma ALPHA] [--confidence LEVEL]\n       {prog} history [TEST] [--local | --shared]\n       {prog} setup\n       {prog} clean",
         prog = program
     );
     print!("{}", opts.usage(&brief));
@@ -53,6 +54,7 @@ pub fn parse_args(config: &Config) -> Result<CliOptions, SlugError> {
     opts.optflag("", "record", "record this run (default is dry run)");
     opts.optopt("", "zscore", "set z-score anomaly threshold (default: 3.0)", "FLOAT");
     opts.optopt("", "ewma", "set ewma smoothing factor alpha (default: 0.2)", "FLOAT");
+    opts.optopt("", "confidence", "flag a new measurement above this share of other measurements (default: 0.95)", "FLOAT");
     opts.optflag("h", "help", "print this help menu");
 
     let parse_start = if subcommand.is_some() { 2 } else { 1 };
@@ -92,6 +94,14 @@ pub fn parse_args(config: &Config) -> Result<CliOptions, SlugError> {
     // no CLI flag for the ewma threshold; it comes from config (like the windows)
     let ewma_threshold = config.ewma.threshold;
 
+    let confidence_level = match matches.opt_str("confidence") {
+        Some(val) => val.parse::<f64>().map_err(|_| SlugError::Cli("Invalid float for confidence".to_string()))?,
+        None => config.confidence.level,
+    };
+    if !(confidence_level > 0.0 && confidence_level < 1.0) {
+        return Err(SlugError::Cli("Confidence level must be between 0 and 1 (exclusive)".to_string()));
+    }
+
     if library_type.is_none() && subcommand.is_none() {
         print_usage(&program, opts);
         return Err(SlugError::Cli("Missing mandatory option -t".to_string()));
@@ -107,6 +117,7 @@ pub fn parse_args(config: &Config) -> Result<CliOptions, SlugError> {
         zscore_threshold,
         ewma_alpha,
         ewma_threshold,
+        confidence_level,
     })
 }
 

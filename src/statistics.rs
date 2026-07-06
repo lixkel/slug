@@ -2,6 +2,8 @@ use crate::parser::PerfData;
 use crate::errors::SlugError;
 use crate::cli::CliOptions;
 use crate::config::{Config, Policy};
+use statrs::distribution::{ContinuousCDF, StudentsT};
+use statrs::statistics::Statistics;
 
 // Type signature for a function that evaluates history and returns an error if degradation is found
 type StatEvaluator = fn(&[PerfData], &CliOptions) -> Result<(), SlugError>;
@@ -36,6 +38,7 @@ pub fn calculate_stats(history: &[PerfData], options: &CliOptions, config: &Conf
     add_stat_checks!(checks, {
         "ewma" => (evaluate_ewma, ["mean"]),
         "zscore" => (evaluate_zscore, ["mean"]),
+        "confidence" => (evaluate_confidence, ["mean"]),
     });
 
     let latest = history.last().unwrap();
@@ -50,6 +53,7 @@ pub fn calculate_stats(history: &[PerfData], options: &CliOptions, config: &Conf
             let window = match check.name {
                 "zscore" => config.zscore.window,
                 "ewma" => config.ewma.window,
+                "confidence" => config.confidence.window,
                 _ => history.len(),
             };
             let start = history.len().saturating_sub(window);
@@ -90,42 +94,51 @@ fn evaluate_ewma(history: &[PerfData], options: &CliOptions) -> Result<(), SlugE
     ewma(history, options.ewma_alpha, options.ewma_threshold)
 }
 
-fn evaluate_zscore(history: &[PerfData], options: &CliOptions) -> Result<(), SlugError> {
-    const METRIC: &str = "mean";
-    
-    // We need a baseline before std-dev is meaningful
+// Newest measurement of a metric plus the historical distribution it is judged against
+struct Sample {
+    current: f64,
+    n: f64,
+    mean: f64,
+    std_dev: f64,
+}
+
+// Preprocess history
+// Returns None if history is too short for meaningful verdict
+fn sample(history: &[PerfData], metric: &str, check_name: &str) -> Option<Sample> {
+    // We need some baseline before std-dev is meaningful
     if history.len() < 10 {
-        println!("\x1b[38;2;255;165;0mToo few samples for Z-Score anomaly detection\x1b[0m");
-        return Ok(());
+        println!("\x1b[38;2;255;165;0mToo few samples for {}\x1b[0m", check_name);
+        return None;
     }
 
     let latest = history.last().unwrap();
-    let historical_entries = &history[..history.len() - 1];
-
-    let current_val = latest.map[METRIC];
-    let values: Vec<f64> = historical_entries.iter()
-        .filter_map(|entry| entry.map.get(METRIC).copied())
+    let values: Vec<f64> = history[..history.len() - 1].iter()
+        .filter_map(|entry| entry.map.get(metric).copied())
         .collect();
 
     // Standard deviation needs >2 elements (N - 1)
     if values.len() < 2 {
-        return Ok(());
+        return None;
     }
 
-    let mean: f64 = values.iter().sum::<f64>() / values.len() as f64;
-    
-    // Calculate sample standard deviation
-    let mut variance_sum = 0.0;
-    for v in &values {
-        let diff = v - mean;
-        variance_sum += diff * diff;
-    }
-    let variance = variance_sum / (values.len() - 1) as f64; // Bessel's correction
-    let std_dev = variance.sqrt();
+    Some(Sample {
+        current: latest.map[metric],
+        n: values.len() as f64,
+        mean: (&values).mean(),
+        std_dev: (&values).std_dev(), // sample standard deviation (Bessel's correction)
+    })
+}
+
+fn evaluate_zscore(history: &[PerfData], options: &CliOptions) -> Result<(), SlugError> {
+    const METRIC: &str = "mean";
+
+    let Some(s) = sample(history, METRIC, "Z-Score anomaly detection") else {
+        return Ok(());
+    };
 
     // std_dev == 0.0
-    if std_dev < f64::EPSILON {
-        if current_val > mean {
+    if s.std_dev < f64::EPSILON {
+        if s.current > s.mean {
              return Err(SlugError::PerformanceRegression(
                 format!("Z-Score: {} increased from flat baseline", METRIC)
             ));
@@ -133,7 +146,7 @@ fn evaluate_zscore(history: &[PerfData], options: &CliOptions) -> Result<(), Slu
         return Ok(());
     }
 
-    let z_score = (current_val - mean) / std_dev;
+    let z_score = (s.current - s.mean) / s.std_dev;
 
     // Z-score > threshold execution time is 3 standard deviations worse than average
     if z_score > options.zscore_threshold {
@@ -144,6 +157,32 @@ fn evaluate_zscore(history: &[PerfData], options: &CliOptions) -> Result<(), Slu
     }
 
     println!("\x1b[32mZ-Score within norm ({:.2})\x1b[0m", z_score);
+    Ok(())
+}
+
+fn evaluate_confidence(history: &[PerfData], options: &CliOptions) -> Result<(), SlugError> {
+    const METRIC: &str = "mean";
+
+    let Some(s) = sample(history, METRIC, "confidence interval check") else {
+        return Ok(());
+    };
+
+    // Highest value a healthy new measurement should reach:
+    // mean + t(level, n-1) * std_dev * sqrt(1 + 1/n)
+    // Student's t because mean and std-dev are just estimates from n points
+    let t = StudentsT::new(0.0, 1.0, s.n - 1.0)
+        .map_err(|e| SlugError::Config(format!("confidence check: {}", e)))?
+        .inverse_cdf(options.confidence_level);
+    let upper_bound = s.mean + t * s.std_dev * (1.0 + 1.0 / s.n).sqrt();
+
+    if s.current > upper_bound {
+        println!("\x1b[31m{} {:.2} outside the {:.0}% confidence interval (upper bound {:.2}) !!!\x1b[0m", METRIC, s.current, options.confidence_level * 100.0, upper_bound);
+        return Err(SlugError::PerformanceRegression(
+            format!("{} {:.2} above the {:.0}% confidence upper bound {:.2}", METRIC, s.current, options.confidence_level * 100.0, upper_bound)
+        ));
+    }
+
+    println!("\x1b[32m{} within the {:.0}% confidence interval (upper bound {:.2})\x1b[0m", METRIC, options.confidence_level * 100.0, upper_bound);
     Ok(())
 }
 
