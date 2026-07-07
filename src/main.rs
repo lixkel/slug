@@ -52,7 +52,13 @@ fn run() -> Result<(), SlugError> {
     let lib_str = options.library_type.as_ref().ok_or_else(|| SlugError::Cli("Missing mandatory option -t".to_string()))?;
     let lib = parser::Lib::from_str(lib_str).ok_or_else(|| SlugError::Parsing("Library in bad format".to_string()))?;
 
-    let data = parser::parse(reader, &lib)?;
+    let mut data = parser::parse(reader, &lib)?;
+
+    // Stamp every benchmark with commit it was measured on
+    let commit_hash = git::get_commit_hash()?;
+    for entry in &mut data {
+        entry.commit_hash = commit_hash.clone();
+    }
 
     // TODO: check if here shouldnt be loop
     let name = data[0].name.clone();

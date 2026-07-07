@@ -28,7 +28,6 @@
 //
 // See google-benchmark below as a typical example
 
-use crate::git;
 use crate::parser::PerfData;
 use crate::errors::SlugError;
 
@@ -73,11 +72,10 @@ fn group<'a>(caps: &'a regex::Captures, name: &str) -> Result<&'a str, SlugError
 // per match, fail if nothing matched
 // Regex must expose a `name` group plus a group for every Metric's value/unit
 fn parse_rows(s: &str, re: &Regex, metrics: &[Metric]) -> Result<Vec<PerfData>, SlugError> {
-    let commit_hash = git::get_commit_hash()?;
     let mut results = Vec::new();
 
     for caps in re.captures_iter(s) {
-        let mut data = PerfData::new(group(&caps, "name")?, &commit_hash);
+        let mut data = PerfData::new(group(&caps, "name")?);
 
         // Walk rows
         for m in metrics {

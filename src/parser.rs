@@ -55,11 +55,11 @@ pub struct PerfData {
 }
 
 impl PerfData {
-    // Commit hash should be created just once at the beggining of a parser
-    pub fn new(name: &str, commit_hash: &str) -> Self {
+    // Parsers work on text only, the commit hash is stamped in later by main
+    pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
-            commit_hash: commit_hash.to_string(),
+            commit_hash: String::new(),
             map: HashMap::new(),
         }
     }
