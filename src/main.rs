@@ -8,6 +8,8 @@ mod statistics;
 mod dbm_csv;
 mod dbm_git;
 mod errors;
+#[cfg(test)]
+mod tests;
 
 use errors::SlugError;
 use std::process::ExitCode;
