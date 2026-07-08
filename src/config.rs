@@ -26,8 +26,8 @@ pub struct Config {
 #[derive(Debug, Default, Deserialize, Clone, Copy, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Policy {
-    #[default]
     Any,
+    #[default]
     All,
 }
 
@@ -35,7 +35,7 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             enabled: vec!["ewma".to_string(), "zscore".to_string(), "confidence".to_string()],
-            policy: Policy::Any,
+            policy: Policy::All,
             zscore: Zscore::default(),
             ewma: Ewma::default(),
             confidence: Confidence::default(),
@@ -123,7 +123,7 @@ const EXAMPLE_CONFIG: &str = "\
 enabled = [\"ewma\", \"zscore\", \"confidence\"]
 # any = flag if ANY of enabled checks flag
 # all = flag only if ALL checks flag
-policy = \"any\"
+policy = \"all\"
 
 [zscore]
 # flag when value is this many standard deviations above the mean
