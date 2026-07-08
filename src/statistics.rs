@@ -211,7 +211,8 @@ pub fn ewma_calc(values: &[PerfData], alpha: f64) -> Vec<f64> {
 
 // Exponential weighted moving average evaluation
 pub fn ewma(values: &[PerfData], alpha: f64, threshold: f64) -> Result<(), SlugError> {
-    if values.len() < 5 {
+    // Same baseline requirement as the other checks
+    if values.len() < 10 {
         println!("\x1b[38;2;255;165;0mToo few samples for exponential moving average\x1b[0m");
         return Ok(());
     }
