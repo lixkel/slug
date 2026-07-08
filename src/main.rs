@@ -67,14 +67,8 @@ fn run() -> Result<(), SlugError> {
         entry.commit_hash = commit_hash.clone();
     }
 
-    // TODO: check if here shouldnt be loop
-    let name = data[0].name.clone();
-
     // Open repo slug was called in
     let slug_git = options.storage.open()?;
-
-    // TODO: maybe put this after insert
-    let mut window = dbm_git::get_latest_n(&slug_git, &name, config.max_window())?;
 
     if options.write {
         dbm_git::insert(&slug_git, &data)?;
@@ -83,11 +77,26 @@ fn run() -> Result<(), SlugError> {
         println!("Dry run, nothing written (use --record to store)");
     }
 
-    window.push(data.into_iter().next().unwrap());
+    // Check every benchmark against its own history (reads exclude HEAD's fresh note)
+    let mut regressions: Vec<String> = Vec::new();
+    for entry in data {
+        let name = entry.name.clone();
+        println!("\n\x1b[1mChecks for benchmark {}\x1b[0m", name);
 
-    statistics::calculate_stats(&window, &options, &config)?;
+        let mut window = dbm_git::get_latest_n(&slug_git, &name, config.max_window())?;
+        window.push(entry);
 
-    Ok(())
+        match statistics::calculate_stats(&window, &options, &config) {
+            Ok(()) => {}
+            Err(SlugError::PerformanceRegression(msg)) => regressions.push(format!("{}: {}", name, msg)),
+            Err(e) => return Err(e),
+        }
+    }
+
+    if regressions.is_empty() {
+        return Ok(());
+    }
+    Err(SlugError::regression(regressions.join("\n")))
 }
 
 fn run_subcommand(options: &cli::CliOptions) -> Result<(), SlugError> {
