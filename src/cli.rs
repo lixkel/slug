@@ -42,7 +42,7 @@ pub fn parse_args(config: &Config) -> Result<CliOptions, SlugError> {
         let subcommand = args[1].clone();
         match subcommand.as_str() {
             "clean" | "prune" | "history" | "setup" => Some(subcommand),
-            _ => None,
+            _ => return Err(SlugError::cli(format!("Unknown subcommand '{}'", subcommand))),
         }
     } else { None };
 
