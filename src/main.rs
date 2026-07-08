@@ -12,6 +12,7 @@ mod errors;
 mod tests;
 
 use errors::SlugError;
+use std::io::{self, Write};
 use std::process::ExitCode;
 
 // Exit codes, to differentiate between regression error and generic error
@@ -88,7 +89,7 @@ fn run() -> Result<(), SlugError> {
 fn run_subcommand(options: &cli::CliOptions) -> Result<(), SlugError> {
     let subcommand = options.subcommand.as_deref().unwrap_or("");
     match subcommand {
-        "clean" => clean(),
+        "clean" => clean(options),
         "prune" => prune(),
         "history" => history(options),
         "setup" => config::write_example(),
@@ -96,12 +97,29 @@ fn run_subcommand(options: &cli::CliOptions) -> Result<(), SlugError> {
     }
 }
 
-fn clean() -> Result<(), SlugError> {
-    let removed = git::clean()?;
-    if removed.is_empty() {
+// Ask yes/no question, anything except yes means no
+fn confirm(question: &str) -> Result<bool, SlugError> {
+    print!("{} [y/N] ", question);
+    io::stdout().flush()?;
+    let mut answer = String::new();
+    io::stdin().read_line(&mut answer)?;
+    Ok(matches!(answer.trim(), "y" | "Y" | "yes" | "Yes"))
+}
+
+fn clean(options: &cli::CliOptions) -> Result<(), SlugError> {
+    let slug_git = options.storage.open()?;
+    if !confirm(&format!("Delete all Slug history in {}?", slug_git.notes_ref))? {
+        println!("Aborted, nothing deleted");
+        return Ok(());
+    }
+    if !slug_git.clean()? {
         println!("Nothing to clean, no slug data found");
-    } else {
-        println!("Cleaning successful");
+        return Ok(());
+    }
+    println!("Cleaning successful");
+    if matches!(options.storage, dbm_git::Store::Shared) {
+        println!("To delete the shared history from the remote, run:");
+        println!("    git push origin --delete {}", slug_git.notes_ref);
     }
     Ok(())
 }
@@ -112,6 +130,8 @@ fn prune() -> Result<(), SlugError> {
         println!("Nothing to prune, everything is still reachable");
     } else {
         println!("Pruned {} unreachable record(s)", removed.len());
+        println!("To update the shared history on the remote as well, run:");
+        println!("    git push origin refs/notes/slug-shared");
     }
     Ok(())
 }

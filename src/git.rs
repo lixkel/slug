@@ -204,6 +204,19 @@ impl SlugGit {
         Ok(())
     }
 
+    // Delete selected store's notes ref, removing all its Slug data
+    // Returns false if there was nothing to delete
+    pub fn clean(&self) -> Result<bool, SlugError> {
+        match self.repo.find_reference(&self.notes_ref) {
+            Ok(mut reference) => {
+                reference.delete()?;
+                Ok(true)
+            }
+            Err(ref e) if e.code() == git2::ErrorCode::NotFound => Ok(false),
+            Err(e) => Err(e.into()),
+        }
+    }
+
     // Call Git housekeeping to pack loose objects, libgit2 never calls gc
     // --auto runs housekeeping only when required, otherwise it early exits
     pub fn gc_auto(&self) -> Result<(), SlugError> {
@@ -227,25 +240,6 @@ pub fn get_commit_hash() -> Result<String, SlugError> {
     let head = repo.head()?;
     let commit = head.peel_to_commit()?;
     Ok(commit.id().to_string())
-}
-
-// Clean every trace of Slug, the shared and local notes
-pub fn clean() -> Result<Vec<String>, SlugError> {
-    let repo = git2::Repository::discover(".")?;
-    let mut removed = Vec::new();
-
-    for refname in [SHARED_NOTES_REF, LOCAL_NOTES_REF] {
-        match repo.find_reference(refname) {
-            Ok(mut reference) => {
-                reference.delete()?;
-                removed.push(refname.to_string());
-            }
-            Err(ref e) if e.code() == git2::ErrorCode::NotFound => {}
-            Err(e) => return Err(e.into()),
-        }
-    }
-
-    Ok(removed)
 }
 
 // True if `source` is reachable from any ref tip
