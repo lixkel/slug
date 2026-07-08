@@ -36,7 +36,7 @@ pub fn normalize(value: f64, unit: &str) -> Result<f64, SlugError> {
     let table = unit_table();
     let key = unit.trim().to_lowercase();
 
-    let factor = table.get(key.as_str()).ok_or_else(|| SlugError::Parsing(format!("Unknown unit '{}'", unit)))?;
+    let factor = table.get(key.as_str()).ok_or_else(|| SlugError::parsing(format!("Unknown unit '{}'", unit)))?;
 
     Ok(value * factor)
 }

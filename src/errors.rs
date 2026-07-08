@@ -15,6 +15,18 @@ impl SlugError {
     pub fn parsing(msg: impl Into<String>) -> Self {
         SlugError::Parsing(msg.into())
     }
+
+    pub fn cli(msg: impl Into<String>) -> Self {
+        SlugError::Cli(msg.into())
+    }
+
+    pub fn config(msg: impl Into<String>) -> Self {
+        SlugError::Config(msg.into())
+    }
+
+    pub fn regression(msg: impl Into<String>) -> Self {
+        SlugError::PerformanceRegression(msg.into())
+    }
 }
 
 impl fmt::Display for SlugError {

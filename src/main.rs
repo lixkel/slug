@@ -36,7 +36,7 @@ fn main() -> ExitCode {
             Exit::Regression.trigger()
         }
         Err(e) => {
-            eprintln!("Error: {:?}", e);
+            eprintln!("{}", e);
             Exit::Error.trigger()
         }
     }
@@ -52,13 +52,13 @@ fn run() -> Result<(), SlugError> {
 
     let reader = cli::get_reader(&options.file)?;
 
-    let lib_str = options.library_type.as_ref().ok_or_else(|| SlugError::Cli("Missing mandatory option -t".to_string()))?;
-    let lib = parser::Lib::from_str(lib_str).ok_or_else(|| SlugError::Parsing("Library in bad format".to_string()))?;
+    let lib_str = options.library_type.as_ref().ok_or_else(|| SlugError::cli("Missing mandatory option -t"))?;
+    let lib = parser::Lib::from_str(lib_str).ok_or_else(|| SlugError::parsing("Library in bad format"))?;
 
     let mut data = parser::parse(reader, &lib)?;
 
     if data.is_empty() {
-        return Err(SlugError::Parsing(format!("No benchmarks found in input, is -t {} right?", lib_str)));
+        return Err(SlugError::parsing(format!("No benchmarks found in input, is -t {} right?", lib_str)));
     }
 
     // Stamp every benchmark with commit it was measured on
@@ -97,7 +97,7 @@ fn run_subcommand(options: &cli::CliOptions) -> Result<(), SlugError> {
         "prune" => prune(),
         "history" => history(options),
         "setup" => config::write_example(),
-        _ => Err(SlugError::Cli(format!("Unknown subcommand '{}'", subcommand))),
+        _ => Err(SlugError::cli(format!("Unknown subcommand '{}'", subcommand))),
     }
 }
 

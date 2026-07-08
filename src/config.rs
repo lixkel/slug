@@ -149,7 +149,7 @@ window = 100
 pub fn write_example() -> Result<(), SlugError> {
     let path = config_path();
     if path.exists() {
-        return Err(SlugError::Config(format!("{} already exists", path.display())));
+        return Err(SlugError::config(format!("{} already exists", path.display())));
     }
     fs::write(&path, EXAMPLE_CONFIG)?;
     println!("Created {}", path.display());

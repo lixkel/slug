@@ -91,7 +91,7 @@ fn parse_rows(s: &str, re: &Regex, metrics: &[Metric]) -> Result<Vec<PerfData>, 
     }
 
     if results.is_empty() {
-        return Err(SlugError::Parsing("No matches found".to_string()));
+        return Err(SlugError::parsing("No matches found"));
     }
 
     Ok(results)
@@ -105,7 +105,7 @@ pub fn pytest_7_3_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
     let unit_re = Regex::new(r"\(time in (?P<unit>\w+)\)")?;
     let unit = unit_re.captures(s)
         .map(|c| c["unit"].to_string())
-        .ok_or_else(|| SlugError::Parsing("Could not find time unit in pytest-benchmark header".to_string()))?;
+        .ok_or_else(|| SlugError::parsing("Could not find time unit in pytest-benchmark header"))?;
 
     // We expect 5 columns: min, max, mean, stddev, median
     let col = |g: &str| format!(r"(?P<{g}>[\d,]+\.\d+)(?:\s+\([\d.]+\))?");

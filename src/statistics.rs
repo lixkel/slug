@@ -84,7 +84,7 @@ fn combine(verdicts: Vec<Result<(), SlugError>>, policy: Policy) -> Result<(), S
     };
 
     if flag {
-        Err(SlugError::PerformanceRegression(regressions.join("; ")))
+        Err(SlugError::regression(regressions.join("; ")))
     } else {
         Ok(())
     }
@@ -139,7 +139,7 @@ fn evaluate_zscore(history: &[PerfData], options: &CliOptions) -> Result<(), Slu
     // std_dev == 0.0
     if s.std_dev < f64::EPSILON {
         if s.current > s.mean {
-             return Err(SlugError::PerformanceRegression(
+             return Err(SlugError::regression(
                 format!("Z-Score: {} increased from flat baseline", METRIC)
             ));
         }
@@ -151,7 +151,7 @@ fn evaluate_zscore(history: &[PerfData], options: &CliOptions) -> Result<(), Slu
     // Z-score > threshold execution time is 3 standard deviations worse than average
     if z_score > options.zscore_threshold {
         println!("\x1b[31mZ-Score anomaly detected ({:.2}, threshold {:.1}) !!!\x1b[0m", z_score, options.zscore_threshold);
-        return Err(SlugError::PerformanceRegression(
+        return Err(SlugError::regression(
             format!("Z-Score for {} is {:.2} (threshold {:.1})", METRIC, z_score, options.zscore_threshold)
         ));
     }
@@ -171,13 +171,13 @@ fn evaluate_confidence(history: &[PerfData], options: &CliOptions) -> Result<(),
     // mean + t(level, n-1) * std_dev * sqrt(1 + 1/n)
     // Student's t because mean and std-dev are just estimates from n points
     let t = StudentsT::new(0.0, 1.0, s.n - 1.0)
-        .map_err(|e| SlugError::Config(format!("confidence check: {}", e)))?
+        .map_err(|e| SlugError::config(format!("confidence check: {}", e)))?
         .inverse_cdf(options.confidence_level);
     let upper_bound = s.mean + t * s.std_dev * (1.0 + 1.0 / s.n).sqrt();
 
     if s.current > upper_bound {
         println!("\x1b[31m{} {:.2} outside the {:.0}% confidence interval (upper bound {:.2}) !!!\x1b[0m", METRIC, s.current, options.confidence_level * 100.0, upper_bound);
-        return Err(SlugError::PerformanceRegression(
+        return Err(SlugError::regression(
             format!("{} {:.2} above the {:.0}% confidence upper bound {:.2}", METRIC, s.current, options.confidence_level * 100.0, upper_bound)
         ));
     }
@@ -228,7 +228,7 @@ pub fn ewma(values: &[PerfData], alpha: f64, threshold: f64) -> Result<(), SlugE
         Ok(())
     } else {
         println!("\x1b[31mEWMA change {:+.1}% (threshold {:.0}%) !!!\x1b[0m", change * 100.0, threshold * 100.0);
-        Err(SlugError::PerformanceRegression(
+        Err(SlugError::regression(
             format!("EWMA change {:+.1}% exceeds threshold {:.0}%", change * 100.0, threshold * 100.0)
         ))
     }

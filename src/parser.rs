@@ -141,7 +141,7 @@ pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<Vec<PerfData>, Sl
     });
 
     let versions = parsers.get(&lib.name)
-        .ok_or_else(|| SlugError::Parsing(format!("No parser registered for library '{}'", lib.name)))?;
+        .ok_or_else(|| SlugError::parsing(format!("No parser registered for library '{}'", lib.name)))?;
 
     // Select highest parser version that is <= than the requested 
     // Each parsers version is the minimum library version it supports
@@ -150,7 +150,7 @@ pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<Vec<PerfData>, Sl
     let closest = versions.iter()
         .filter(|p| p.version <= lib.version)
         .max_by(|a, b| a.version.cmp(&b.version))
-        .ok_or_else(|| SlugError::Parsing(format!(
+        .ok_or_else(|| SlugError::parsing(format!(
             "No parser for '{}' compatible with version {}.{}.{}",
             lib.name, lib.version.major, lib.version.minor, lib.version.patch
         )))?;

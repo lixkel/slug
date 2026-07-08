@@ -75,19 +75,19 @@ pub fn parse_args(config: &Config) -> Result<CliOptions, SlugError> {
     let target = matches.free.first().cloned();
 
     let storage = match (local, shared) {
-        (true, true) => return Err(SlugError::Cli("Use at most one of --local, --shared".to_string())),
+        (true, true) => return Err(SlugError::cli("Use at most one of --local, --shared")),
         (_, true) => Store::Shared,
         _ => Store::Local,
     };
 
     // CLI flag value beats config value
     let zscore_threshold = match matches.opt_str("zscore") {
-        Some(val) => val.parse::<f64>().map_err(|_| SlugError::Cli("Invalid float for zscore".to_string()))?,
+        Some(val) => val.parse::<f64>().map_err(|_| SlugError::cli("Invalid float for zscore"))?,
         None => config.zscore.threshold,
     };
 
     let ewma_alpha = match matches.opt_str("ewma") {
-        Some(val) => val.parse::<f64>().map_err(|_| SlugError::Cli("Invalid float for ewma".to_string()))?,
+        Some(val) => val.parse::<f64>().map_err(|_| SlugError::cli("Invalid float for ewma"))?,
         None => config.ewma.alpha,
     };
 
@@ -95,16 +95,16 @@ pub fn parse_args(config: &Config) -> Result<CliOptions, SlugError> {
     let ewma_threshold = config.ewma.threshold;
 
     let confidence_level = match matches.opt_str("confidence") {
-        Some(val) => val.parse::<f64>().map_err(|_| SlugError::Cli("Invalid float for confidence".to_string()))?,
+        Some(val) => val.parse::<f64>().map_err(|_| SlugError::cli("Invalid float for confidence"))?,
         None => config.confidence.level,
     };
     if !(confidence_level > 0.0 && confidence_level < 1.0) {
-        return Err(SlugError::Cli("Confidence level must be between 0 and 1 (exclusive)".to_string()));
+        return Err(SlugError::cli("Confidence level must be between 0 and 1 (exclusive)"));
     }
 
     if library_type.is_none() && subcommand.is_none() {
         print_usage(&program, opts);
-        return Err(SlugError::Cli("Missing mandatory option -t".to_string()));
+        return Err(SlugError::cli("Missing mandatory option -t"));
     };
 
     Ok(CliOptions {

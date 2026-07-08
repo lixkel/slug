@@ -79,7 +79,7 @@ pub fn export(slug_git: &SlugGit, target: Option<&str>) -> Result<Vec<(String, S
     if let Some(name) = target {
         exports.retain(|(test, _)| test == name);
         if exports.is_empty() {
-            return Err(SlugError::Parsing(format!("No history for test '{}'", name)));
+            return Err(SlugError::parsing(format!("No history for test '{}'", name)));
         }
     }
 
