@@ -1,6 +1,6 @@
 extern crate getopts;
 
-use std::io;
+use std::io::{self, IsTerminal};
 use std::fs::File;
 use getopts::Options;
 use std::env;
@@ -71,8 +71,13 @@ pub fn parse_args(config: &Config) -> Result<CliOptions, SlugError> {
     let shared = matches.opt_present("s");
     let write = matches.opt_present("record");
 
-    // Positional argument (test name in `slug history fib32`)
+    // Positional argument, only `history` subcommand takes one
     let target = matches.free.first().cloned();
+    if let Some(stray) = &target {
+        if subcommand.as_deref() != Some("history") {
+            return Err(SlugError::cli(format!("Unexpected argument '{}', input files are passed with -f", stray)));
+        }
+    }
 
     let storage = match (local, shared) {
         (true, true) => return Err(SlugError::cli("Use at most one of --local, --shared")),
@@ -129,6 +134,10 @@ pub fn get_reader(file: &Option<String>) -> Result<PerfDataReader, SlugError> {
             Ok(PerfDataReader::File(file))
         },
         None => {
+            // Warn interactive users who probably forgot -f, stay quiet when piped
+            if io::stdin().is_terminal() {
+                eprintln!("No -f given, reading benchmark output from stdin (Ctrl-D to end)");
+            }
             Ok(PerfDataReader::Stdin(io::stdin()))
         }
     }
