@@ -90,11 +90,17 @@ pub fn parse_args(config: &Config) -> Result<CliOptions, SlugError> {
         Some(val) => val.parse::<f64>().map_err(|_| SlugError::cli("Invalid float for zscore"))?,
         None => config.zscore.threshold,
     };
+    if !(zscore_threshold > 0.0) {
+        return Err(SlugError::cli("Z-score threshold must be positive"));
+    }
 
     let ewma_alpha = match matches.opt_str("ewma") {
         Some(val) => val.parse::<f64>().map_err(|_| SlugError::cli("Invalid float for ewma"))?,
         None => config.ewma.alpha,
     };
+    if !(ewma_alpha > 0.0 && ewma_alpha <= 1.0) {
+        return Err(SlugError::cli("EWMA alpha must be between 0 (exclusive) and 1"));
+    }
 
     // no CLI flag for the ewma threshold; it comes from config (like the windows)
     let ewma_threshold = config.ewma.threshold;
