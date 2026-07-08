@@ -57,6 +57,10 @@ fn run() -> Result<(), SlugError> {
 
     let mut data = parser::parse(reader, &lib)?;
 
+    if data.is_empty() {
+        return Err(SlugError::Parsing(format!("No benchmarks found in input, is -t {} right?", lib_str)));
+    }
+
     // Stamp every benchmark with commit it was measured on
     let commit_hash = git::get_commit_hash()?;
     for entry in &mut data {
