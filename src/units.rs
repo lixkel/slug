@@ -40,3 +40,17 @@ pub fn normalize(value: f64, unit: &str) -> Result<f64, SlugError> {
 
     Ok(value * factor)
 }
+
+// Render nanoseconds
+pub fn format_ns(ns: f64) -> String {
+    let size = ns.abs();
+    if size >= 1_000_000_000.0 {
+        format!("{:.2} s", ns / 1_000_000_000.0)
+    } else if size >= 1_000_000.0 {
+        format!("{:.2} ms", ns / 1_000_000.0)
+    } else if size >= 1_000.0 {
+        format!("{:.2} us", ns / 1_000.0)
+    } else {
+        format!("{:.2} ns", ns)
+    }
+}

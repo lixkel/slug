@@ -1,12 +1,51 @@
 use crate::parser::PerfData;
 use crate::errors::SlugError;
 use crate::cli::CliOptions;
+use crate::units;
 use crate::config::{Config, Policy};
 use statrs::distribution::{ContinuousCDF, StudentsT};
 use statrs::statistics::Statistics;
 
-// Type signature for a function that evaluates history and returns an error if degradation is found
-type StatEvaluator = fn(&[PerfData], &CliOptions) -> Result<(), SlugError>;
+// Warm up floor
+pub const MIN_SAMPLES: usize = 10;
+
+// Outcome of one statistical check
+pub struct CheckReport {
+    pub flagged: bool,
+    // These are so far only used by tests
+    #[allow(dead_code)]
+    pub value: f64,           // statistic the check computed
+    #[allow(dead_code)]
+    pub threshold: f64,       // limit the value was judged against
+    pub line: Option<String>, // verdict sentence, None = silent
+}
+
+// What check produces
+pub enum CheckVerdict {
+    Skipped,                                            // metric too sparse in the window
+    TooFewSamples { check: &'static str, have: usize }, // window below MIN_SAMPLES
+    Judged(CheckReport),
+}
+
+impl CheckVerdict {
+    fn passed(value: f64, threshold: f64, line: Option<String>) -> CheckVerdict {
+        CheckVerdict::Judged(CheckReport { flagged: false, value, threshold, line })
+    }
+
+    fn flagged(value: f64, threshold: f64, line: String) -> CheckVerdict {
+        CheckVerdict::Judged(CheckReport { flagged: true, value, threshold, line: Some(line) })
+    }
+
+    fn flag_reason(&self) -> Option<String> {
+        match self {
+            CheckVerdict::Judged(report) if report.flagged => report.line.clone(),
+            _ => None,
+        }
+    }
+}
+
+// Type signature for a function that judges newest measurement against history
+type StatEvaluator = fn(&[PerfData], &CliOptions) -> Result<CheckVerdict, SlugError>;
 
 struct StatCheck {
     pub name: &'static str,
@@ -28,9 +67,43 @@ macro_rules! add_stat_checks {
     };
 }
 
+// Run statistical tests and then combine their output
 pub fn calculate_stats(history: &[PerfData], options: &CliOptions, config: &Config) -> Result<(), SlugError> {
+    let verdicts = run_checks(history, options, config)?;
+
+    for verdict in &verdicts {
+        if let Some(text) = render(verdict) {
+            println!("{}", text);
+        }
+    }
+
+    let report = combine(&verdicts, config.policy);
+    if report.flagged {
+        return Err(SlugError::regression(report.reasons.join("; ")));
+    }
+    Ok(())
+}
+
+fn render(verdict: &CheckVerdict) -> Option<String> {
+    match verdict {
+        CheckVerdict::Skipped => None,
+        CheckVerdict::TooFewSamples { check, have } => {
+            Some(format!("  Too few samples for {} ({} of {})", check, have, MIN_SAMPLES))
+        }
+        CheckVerdict::Judged(report) => report.line.as_ref().map(|line| {
+            if report.flagged {
+                format!("  flag  {}", line)
+            } else {
+                format!("  pass  {}", line)
+            }
+        }),
+    }
+}
+
+// Run checks selected in config, each over its own window
+pub fn run_checks(history: &[PerfData], options: &CliOptions, config: &Config) -> Result<Vec<CheckVerdict>, SlugError> {
     if history.is_empty() {
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     let mut checks: Vec<StatCheck> = Vec::new();
@@ -43,8 +116,7 @@ pub fn calculate_stats(history: &[PerfData], options: &CliOptions, config: &Conf
 
     let latest = history.last().unwrap();
 
-    // Run the checks selected in config, each over its own window of recent points
-    let mut verdicts: Vec<Result<(), SlugError>> = Vec::new();
+    let mut verdicts: Vec<CheckVerdict> = Vec::new();
     for check in &checks {
         if !config.enabled.iter().any(|name| name == check.name) {
             continue;
@@ -57,41 +129,37 @@ pub fn calculate_stats(history: &[PerfData], options: &CliOptions, config: &Conf
                 _ => history.len(),
             };
             let start = history.len().saturating_sub(window);
-            verdicts.push((check.evaluator)(&history[start..], options));
+            let slice = &history[start..];
+
+            // Warm up floor
+            if slice.len() < MIN_SAMPLES {
+                verdicts.push(CheckVerdict::TooFewSamples { check: check.name, have: slice.len() });
+            } else {
+                verdicts.push((check.evaluator)(slice, options)?);
+            }
         }
     }
 
-    combine(verdicts, config.policy)
+    Ok(verdicts)
 }
 
-// Combine the enabled checks verdicts into pass/fail based on selected policy
-fn combine(verdicts: Vec<Result<(), SlugError>>, policy: Policy) -> Result<(), SlugError> {
-    let mut regressions: Vec<String> = Vec::new();
-    let mut ran = 0;
+// Combined outcome of all enabled checks for one benchmark
+pub struct TestReport {
+    pub flagged: bool,
+    pub reasons: Vec<String>,
+}
 
-    for verdict in verdicts {
-        ran += 1;
-        match verdict {
-            Ok(()) => {}
-            Err(SlugError::PerformanceRegression(msg)) => regressions.push(msg),
-            Err(other) => return Err(other),
-        }
-    }
+// Combine verdicts of statistical tests
+pub fn combine(verdicts: &[CheckVerdict], policy: Policy) -> TestReport {
+    let ran = verdicts.len();
+    let reasons: Vec<String> = verdicts.iter().filter_map(CheckVerdict::flag_reason).collect();
 
-    let flag = match policy {
-        Policy::Any => !regressions.is_empty(),
-        Policy::All => ran > 0 && regressions.len() == ran,
+    let flagged = match policy {
+        Policy::Any => !reasons.is_empty(),
+        Policy::All => ran > 0 && reasons.len() == ran,
     };
 
-    if flag {
-        Err(SlugError::regression(regressions.join("; ")))
-    } else {
-        Ok(())
-    }
-}
-
-fn evaluate_ewma(history: &[PerfData], options: &CliOptions) -> Result<(), SlugError> {
-    ewma(history, options.ewma_alpha, options.ewma_threshold)
+    TestReport { flagged, reasons }
 }
 
 // Newest measurement of a metric plus the historical distribution it is judged against
@@ -103,16 +171,9 @@ struct Sample {
 }
 
 // Preprocess history
-// Returns None if history is too short for meaningful verdict
-fn sample(history: &[PerfData], metric: &str, check_name: &str) -> Option<Sample> {
-    // We need some baseline before std-dev is meaningful
-    if history.len() < 10 {
-        println!("\x1b[38;2;255;165;0mToo few samples for {}\x1b[0m", check_name);
-        return None;
-    }
-
-    let latest = history.last().unwrap();
-    let values: Vec<f64> = history[..history.len() - 1].iter()
+fn sample(history: &[PerfData], metric: &str) -> Option<Sample> {
+    let (latest, past) = history.split_last().unwrap();
+    let values: Vec<f64> = past.iter()
         .filter_map(|entry| entry.map.get(metric).copied())
         .collect();
 
@@ -129,42 +190,49 @@ fn sample(history: &[PerfData], metric: &str, check_name: &str) -> Option<Sample
     })
 }
 
-fn evaluate_zscore(history: &[PerfData], options: &CliOptions) -> Result<(), SlugError> {
+pub fn evaluate_zscore(history: &[PerfData], options: &CliOptions) -> Result<CheckVerdict, SlugError> {
     const METRIC: &str = "mean";
 
-    let Some(s) = sample(history, METRIC, "Z-Score anomaly detection") else {
-        return Ok(());
+    let Some(s) = sample(history, METRIC) else {
+        return Ok(CheckVerdict::Skipped);
     };
 
     // std_dev == 0.0
     if s.std_dev < f64::EPSILON {
-        if s.current > s.mean {
-             return Err(SlugError::regression(
-                format!("Z-Score: {} increased from flat baseline", METRIC)
-            ));
-        }
-        return Ok(());
+        return Ok(if s.current > s.mean {
+            CheckVerdict::flagged(
+                f64::INFINITY,
+                options.zscore_threshold,
+                format!("Z-Score: {} increased from flat baseline", METRIC),
+            )
+        } else {
+            CheckVerdict::passed(0.0, options.zscore_threshold, None)
+        });
     }
 
     let z_score = (s.current - s.mean) / s.std_dev;
 
     // Z-score > threshold execution time is 3 standard deviations worse than average
     if z_score > options.zscore_threshold {
-        println!("\x1b[31mZ-Score anomaly detected ({:.2}, threshold {:.1}) !!!\x1b[0m", z_score, options.zscore_threshold);
-        return Err(SlugError::regression(
-            format!("Z-Score for {} is {:.2} (threshold {:.1})", METRIC, z_score, options.zscore_threshold)
-        ));
+        Ok(CheckVerdict::flagged(
+            z_score,
+            options.zscore_threshold,
+            format!("Z-Score anomaly detected ({:.2}, threshold {:.1})", z_score, options.zscore_threshold),
+        ))
+    } else {
+        Ok(CheckVerdict::passed(
+            z_score,
+            options.zscore_threshold,
+            Some(format!("Z-Score within norm ({:.2})", z_score)),
+        ))
     }
-
-    println!("\x1b[32mZ-Score within norm ({:.2})\x1b[0m", z_score);
-    Ok(())
 }
 
-fn evaluate_confidence(history: &[PerfData], options: &CliOptions) -> Result<(), SlugError> {
+pub fn evaluate_confidence(history: &[PerfData], options: &CliOptions) -> Result<CheckVerdict, SlugError> {
     const METRIC: &str = "mean";
 
-    let Some(s) = sample(history, METRIC, "confidence interval check") else {
-        return Ok(());
+    let Some(s) = sample(history, METRIC) else {
+        return Ok(CheckVerdict::Skipped);
     };
 
     // Highest value a healthy new measurement should reach:
@@ -176,14 +244,21 @@ fn evaluate_confidence(history: &[PerfData], options: &CliOptions) -> Result<(),
     let upper_bound = s.mean + t * s.std_dev * (1.0 + 1.0 / s.n).sqrt();
 
     if s.current > upper_bound {
-        println!("\x1b[31m{} {:.2} outside the {:.0}% confidence interval (upper bound {:.2}) !!!\x1b[0m", METRIC, s.current, options.confidence_level * 100.0, upper_bound);
-        return Err(SlugError::regression(
-            format!("{} {:.2} above the {:.0}% confidence upper bound {:.2}", METRIC, s.current, options.confidence_level * 100.0, upper_bound)
-        ));
+        Ok(CheckVerdict::flagged(
+            s.current,
+            upper_bound,
+            format!("{} {} is {:+.1}% above the recent average ({:.0}% upper bound {})",
+                METRIC, units::format_ns(s.current), (s.current / s.mean - 1.0) * 100.0,
+                options.confidence_level * 100.0, units::format_ns(upper_bound)),
+        ))
+    } else {
+        Ok(CheckVerdict::passed(
+            s.current,
+            upper_bound,
+            Some(format!("{} {} within the {:.0}% confidence interval (upper bound {})",
+                METRIC, units::format_ns(s.current), options.confidence_level * 100.0, units::format_ns(upper_bound))),
+        ))
     }
-
-    println!("\x1b[32m{} within the {:.0}% confidence interval (upper bound {:.2})\x1b[0m", METRIC, options.confidence_level * 100.0, upper_bound);
-    Ok(())
 }
 
 // Exponential weighted moving average calculator
@@ -191,7 +266,7 @@ pub fn ewma_calc(values: &[PerfData], alpha: f64) -> Vec<f64> {
     if values.is_empty() {
         return Vec::new();
     }
-    
+
     const METRIC: &str = "mean";
 
     let mut averages = Vec::new();
@@ -210,26 +285,25 @@ pub fn ewma_calc(values: &[PerfData], alpha: f64) -> Vec<f64> {
 }
 
 // Exponential weighted moving average evaluation
-pub fn ewma(values: &[PerfData], alpha: f64, threshold: f64) -> Result<(), SlugError> {
-    // Same baseline requirement as the other checks
-    if values.len() < 10 {
-        println!("\x1b[38;2;255;165;0mToo few samples for exponential moving average\x1b[0m");
-        return Ok(());
-    }
-
-    let avg = ewma_calc(values, alpha);
+pub fn evaluate_ewma(history: &[PerfData], options: &CliOptions) -> Result<CheckVerdict, SlugError> {
+    let avg = ewma_calc(history, options.ewma_alpha);
 
     // Calculate percentual change in last two values
     let len = avg.len();
-    let change = (avg[len-1]-avg[len-2])/avg[len-2];
+    let change = (avg[len - 1] - avg[len - 2]) / avg[len - 2];
 
-    if change < threshold {
-        println!("\x1b[32mEWMA change {:+.1}% (threshold {:.0}%)\x1b[0m", change * 100.0, threshold * 100.0);
-        Ok(())
+    // Comparing this way ensures NaN flags
+    if change < options.ewma_threshold {
+        Ok(CheckVerdict::passed(
+            change,
+            options.ewma_threshold,
+            Some(format!("EWMA change {:+.1}% (threshold {:.0}%)", change * 100.0, options.ewma_threshold * 100.0)),
+        ))
     } else {
-        println!("\x1b[31mEWMA change {:+.1}% (threshold {:.0}%) !!!\x1b[0m", change * 100.0, threshold * 100.0);
-        Err(SlugError::regression(
-            format!("EWMA change {:+.1}% exceeds threshold {:.0}%", change * 100.0, threshold * 100.0)
+        Ok(CheckVerdict::flagged(
+            change,
+            options.ewma_threshold,
+            format!("EWMA change {:+.1}% exceeds threshold {:.0}%", change * 100.0, options.ewma_threshold * 100.0),
         ))
     }
 }

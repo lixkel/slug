@@ -10,9 +10,14 @@ use crate::config::{Config, Policy};
 use crate::dbm_git::Store;
 use crate::errors::SlugError;
 use crate::parser::{self, Lib, PerfData, Version};
-use crate::statistics::calculate_stats;
+use crate::statistics::{combine, evaluate_confidence, evaluate_ewma, evaluate_zscore, run_checks, CheckReport, CheckVerdict};
 use crate::units;
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
+use rand_distr::{Distribution, Normal};
 use std::collections::HashMap;
+
+const ALL_CHECKS: [&str; 3] = ["zscore", "ewma", "confidence"];
 
 // Checks if two floats are "close enough" to being equal
 fn close(actual: f64, expected: f64) -> bool {
@@ -44,11 +49,23 @@ fn point(metric: &str, value: f64) -> PerfData {
     PerfData { name: "bench".to_string(), commit_hash: "0000000".to_string(), map }
 }
 
+// One record per value, the shape benchmark history arrives in
+fn series(values: &[f64]) -> Vec<PerfData> {
+    values.iter().map(|v| point("mean", *v)).collect()
+}
+
 // Twenty points alternating +-1 ns around 100 ns
 fn noisy_baseline() -> Vec<PerfData> {
     (0..20)
         .map(|i| point("mean", 100.0 + if i % 2 == 0 { 1.0 } else { -1.0 }))
         .collect()
+}
+
+// Noisy baseline with one newest measurement appended
+fn history_with(newest: f64) -> Vec<PerfData> {
+    let mut history = noisy_baseline();
+    history.push(point("mean", newest));
+    history
 }
 
 // Slug default run options
@@ -78,11 +95,17 @@ fn config_with(enabled: &[&str]) -> Config {
     config
 }
 
-// Fails unless the verdict is specifically a performance regression
-fn assert_regression(verdict: Result<(), SlugError>) {
+// The pipeline verdict for one benchmark: enabled checks and policy
+fn gate(history: &[PerfData], opts: &CliOptions, config: &Config) -> bool {
+    let verdicts = run_checks(history, opts, config).unwrap();
+    combine(&verdicts, config.policy).flagged
+}
+
+// Unwraps check's return value, fails if check declined to judge
+fn judged(verdict: Result<CheckVerdict, SlugError>) -> CheckReport {
     match verdict {
-        Err(SlugError::PerformanceRegression(_)) => {}
-        _ => panic!("expected PerformanceRegression verdict"),
+        Ok(CheckVerdict::Judged(report)) => report,
+        _ => panic!("expected a judged verdict"),
     }
 }
 
@@ -263,93 +286,72 @@ fn unknown_library_is_rejected() {
 // Statistical checks
 
 #[test]
-fn confidence_passes_stable_history() {
-    let mut history = noisy_baseline();
-    history.push(point("mean", 101.0));
-
-    let config = config_with(&["confidence"]);
-    assert!(calculate_stats(&history, &options(), &config).is_ok());
+fn every_check_passes_stable_history() {
+    for check in ALL_CHECKS {
+        assert!(!gate(&history_with(101.0), &options(), &config_with(&[check])),
+            "{} flagged a stable history", check);
+    }
 }
 
 #[test]
-fn confidence_flags_spike() {
-    let mut history = noisy_baseline();
-    history.push(point("mean", 300.0));
-
-    let config = config_with(&["confidence"]);
-    assert_regression(calculate_stats(&history, &options(), &config));
+fn every_check_flags_spike() {
+    for check in ALL_CHECKS {
+        assert!(gate(&history_with(300.0), &options(), &config_with(&[check])),
+            "{} missed a 3x spike", check);
+    }
 }
 
 #[test]
-fn confidence_skips_short_history() {
+fn every_check_skips_short_history() {
     // Below the 10 sample minimum even a spike stays silent
-    let mut history: Vec<PerfData> = (0..5).map(|_| point("mean", 100.0)).collect();
-    history.push(point("mean", 300.0));
-
-    let config = config_with(&["confidence"]);
-    assert!(calculate_stats(&history, &options(), &config).is_ok());
+    for check in ALL_CHECKS {
+        let mut history = series(&[100.0; 5]);
+        history.push(point("mean", 300.0));
+        assert!(!gate(&history, &options(), &config_with(&[check])),
+            "{} judged below the sample floor", check);
+    }
 }
 
 #[test]
 fn confidence_controls_sensitivity() {
-    // Higher confidence level widens the interval flagged at 90%, tolerated at 99.9%
-    let mut history = noisy_baseline();
-    history.push(point("mean", 103.0));
-
+    // Higher confidence level widens interval flagged at 90%, tolerated at 99.9%
     let config = config_with(&["confidence"]);
 
     let mut strict = options();
     strict.confidence_level = 0.90;
-    assert_regression(calculate_stats(&history, &strict, &config));
+    assert!(gate(&history_with(103.0), &strict, &config));
 
     let mut lenient = options();
     lenient.confidence_level = 0.999;
-    assert!(calculate_stats(&history, &lenient, &config).is_ok());
-}
-
-#[test]
-fn zscore_passes_stable_history() {
-    let mut history = noisy_baseline();
-    history.push(point("mean", 101.0));
-
-    let config = config_with(&["zscore"]);
-    assert!(calculate_stats(&history, &options(), &config).is_ok());
-}
-
-#[test]
-fn zscore_flags_spike() {
-    let mut history = noisy_baseline();
-    history.push(point("mean", 300.0));
-
-    let config = config_with(&["zscore"]);
-    assert_regression(calculate_stats(&history, &options(), &config));
-}
-
-#[test]
-fn zscore_skips_short_history() {
-    // Below 10 sample minimum even a spike stays silent
-    let mut history: Vec<PerfData> = (0..5).map(|_| point("mean", 100.0)).collect();
-    history.push(point("mean", 300.0));
-
-    let config = config_with(&["zscore"]);
-    assert!(calculate_stats(&history, &options(), &config).is_ok());
+    assert!(!gate(&history_with(103.0), &lenient, &config));
 }
 
 #[test]
 fn zscore_controls_sensitivity() {
-    // Lowering threshold tightens the check flagged at 1.5, tolerated at 4.0
-    let mut history = noisy_baseline();
-    history.push(point("mean", 103.0));
-
+    // Lowering threshold tightens check flagged at 1.5, tolerated at 4.0
     let config = config_with(&["zscore"]);
 
     let mut strict = options();
     strict.zscore_threshold = 1.5;
-    assert_regression(calculate_stats(&history, &strict, &config));
+    assert!(gate(&history_with(103.0), &strict, &config));
 
     let mut lenient = options();
     lenient.zscore_threshold = 4.0;
-    assert!(calculate_stats(&history, &lenient, &config).is_ok());
+    assert!(!gate(&history_with(103.0), &lenient, &config));
+}
+
+#[test]
+fn ewma_controls_sensitivity() {
+    // Lower threshold tightens check flagged at 5%, tolerated at 50%
+    let config = config_with(&["ewma"]);
+
+    let mut strict = options();
+    strict.ewma_threshold = 0.05;
+    assert!(gate(&history_with(200.0), &strict, &config));
+
+    let mut lenient = options();
+    lenient.ewma_threshold = 0.5;
+    assert!(!gate(&history_with(200.0), &lenient, &config));
 }
 
 #[test]
@@ -357,60 +359,223 @@ fn zscore_increase_from_flat_baseline() {
     let config = config_with(&["zscore"]);
 
     // Zero spread means any increase flags
-    let mut history: Vec<PerfData> = (0..15).map(|_| point("mean", 100.0)).collect();
+    let mut history = series(&[100.0; 15]);
     history.push(point("mean", 100.5));
-    assert_regression(calculate_stats(&history, &options(), &config));
+    assert!(gate(&history, &options(), &config));
 
     // Staying level is fine
-    let mut same: Vec<PerfData> = (0..15).map(|_| point("mean", 100.0)).collect();
-    same.push(point("mean", 100.0));
-    assert!(calculate_stats(&same, &options(), &config).is_ok());
+    assert!(!gate(&series(&[100.0; 16]), &options(), &config));
+}
+
+
+// Statistical checks against a pseudo-oracle (Weyuker 1982)
+// Expected values were generated by independent implementation (scipy/pandas)
+
+// Ten point baseline with mean exactly 100 and standard deviation 2
+fn reference_history(newest: f64) -> Vec<PerfData> {
+    series(&[100.0, 102.0, 98.0, 101.0, 99.0, 103.0, 97.0, 100.0, 102.0, 98.0, newest])
 }
 
 #[test]
-fn ewma_passes_stable_history() {
-    let mut history = noisy_baseline();
-    history.push(point("mean", 101.0));
-
-    let config = config_with(&["ewma"]);
-    assert!(calculate_stats(&history, &options(), &config).is_ok());
+fn zscore_matches_pseudo_oracle() {
+    // (110 - 100) / 2 = 5.0
+    let report = judged(evaluate_zscore(&reference_history(110.0), &options()));
+    assert!(close(report.value, 5.0));
+    assert!(report.flagged); // 5.0 is above default threshold 3.0
 }
 
 #[test]
-fn ewma_flags_spike() {
-    // 300 on a ~100 baseline moves the smoothed average ~40%, while the threshold is 20%
-    let mut history = noisy_baseline();
-    history.push(point("mean", 300.0));
+fn confidence_bound_matches_pseudo_oracle() {
+    // upper bound = 100 + t(0.95, 9) * 2 * sqrt(1 + 1/10) = 103.8451701269
+    // where t(0.95, 9) = 1.8331129327 (scipy.stats.t.ppf(0.95, 9))
+    let report = judged(evaluate_confidence(&reference_history(110.0), &options()));
+    assert!(close(report.threshold, 103.8451701269));
+    assert!(report.flagged); // 110 is above bound
 
-    let config = config_with(&["ewma"]);
-    assert_regression(calculate_stats(&history, &options(), &config));
+    let report = judged(evaluate_confidence(&reference_history(103.844), &options()));
+    assert!(!report.flagged); // just under bound
 }
 
 #[test]
-fn ewma_skips_short_history() {
-    // Below 5 sample minimum refuse to measure
-    let mut history: Vec<PerfData> = (0..3).map(|_| point("mean", 100.0)).collect();
-    history.push(point("mean", 300.0));
-
-    let config = config_with(&["ewma"]);
-    assert!(calculate_stats(&history, &options(), &config).is_ok());
+fn ewma_change_matches_pseudo_oracle() {
+    // smoothed averages 99.8286755840 -> 101.8629404672, change 2.0377563%
+    let report = judged(evaluate_ewma(&reference_history(110.0), &options()));
+    assert!(close(report.value, 0.020377563));
+    assert!(!report.flagged); // 2.04% stays under 10% threshold
 }
 
 #[test]
-fn ewma_controls_sensitivity() {
-    // Lower threshold tightens the check flagged at 5%, tolerated at 50%
-    let mut history = noisy_baseline();
-    history.push(point("mean", 200.0));
+fn verdicts_are_scale_invariant() {
+    // Rescaling history must not change verdicts
+    let config = config_with(&ALL_CHECKS);
 
-    let config = config_with(&["ewma"]);
+    for scale in [1.0, 1e6] {
+        let scaled = |newest: f64| -> Vec<PerfData> {
+            let mut history: Vec<PerfData> = noisy_baseline().iter()
+                .map(|entry| point("mean", entry.map["mean"] * scale))
+                .collect();
+            history.push(point("mean", newest * scale));
+            history
+        };
 
-    let mut strict = options();
-    strict.ewma_threshold = 0.05;
-    assert_regression(calculate_stats(&history, &strict, &config));
+        assert!(gate(&scaled(300.0), &options(), &config));
+        assert!(!gate(&scaled(101.0), &options(), &config));
+    }
+}
+
+// Statistical properties of checks on synthetic streams
+
+// Feed points one at a time, while counting flags
+fn flags_on_stream(values: &[f64], config: &Config, opts: &CliOptions) -> (usize, usize) {
+    let history = series(values);
+
+    let mut flagged = 0;
+    let mut judged = 0;
+    for i in 9..history.len() {
+        judged += 1;
+        if gate(&history[..=i], opts, config) {
+            flagged += 1;
+        }
+    }
+    (flagged, judged)
+}
+
+// 3000 healthy points around 100 ns with sigma 3, ChaCha8 is seed stable
+fn healthy_stream() -> Vec<f64> {
+    let mut rng = ChaCha8Rng::seed_from_u64(0x5eed_cafe);
+    let normal = Normal::new(100.0, 3.0).unwrap();
+    (0..3000).map(|_| normal.sample(&mut rng)).collect()
+}
+
+#[test]
+fn confidence_false_alarm_rate_matches_level() {
+    // Confidence false alarm rate is 5% at 0.95
+    let stream = healthy_stream();
+
+    let (flagged, judged) = flags_on_stream(&stream, &config_with(&["confidence"]), &options());
+    let rate = flagged as f64 / judged as f64;
+    println!("confidence 0.95 false alarm rate: {:.4}", rate);
+    assert!(rate > 0.035 && rate < 0.065, "rate {} outside [3.5%, 6.5%]", rate);
 
     let mut lenient = options();
-    lenient.ewma_threshold = 0.5;
-    assert!(calculate_stats(&history, &lenient, &config).is_ok());
+    lenient.confidence_level = 0.90;
+    let (flagged, judged) = flags_on_stream(&stream, &config_with(&["confidence"]), &lenient);
+    let rate = flagged as f64 / judged as f64;
+    println!("confidence 0.90 false alarm rate: {:.4}", rate);
+    assert!(rate > 0.08 && rate < 0.12, "rate {} outside [8%, 12%]", rate);
+}
+
+#[test]
+fn zscore_false_alarms_are_rare() {
+    // Three standard deviations should be crossed by under 1% of healthy points
+    let (flagged, judged) = flags_on_stream(&healthy_stream(), &config_with(&["zscore"]), &options());
+    let rate = flagged as f64 / judged as f64;
+    println!("zscore 3.0 false alarm rate: {:.4}", rate);
+    assert!(rate < 0.01, "rate {} not under 1%", rate);
+}
+
+#[test]
+fn ewma_never_false_alarms() {
+    // Smoothing suppresses noise completely
+    let (flagged, _) = flags_on_stream(&healthy_stream(), &config_with(&["ewma"]), &options());
+    assert_eq!(flagged, 0);
+}
+
+// 50 points alternating +-3 around 100, sample std dev 3.03
+fn step_baseline() -> Vec<f64> {
+    (0..50).map(|i| 100.0 + if i % 2 == 0 { 3.0 } else { -3.0 }).collect()
+}
+
+#[test]
+fn mean_shift_size_determines_which_checks_flag() {
+    // Confidence is the most sensitive, ewma needs near 50%
+    let flags = |step_pct: f64, enabled: &[&str]| {
+        let mut values = step_baseline();
+        values.push(100.0 * (1.0 + step_pct / 100.0));
+        gate(&series(&values), &options(), &config_with(enabled))
+    };
+
+    // +6% (two standard deviations): only confidence flags
+    assert!(flags(6.0, &["confidence"]));
+    assert!(!flags(6.0, &["zscore"]));
+    assert!(!flags(6.0, &["ewma"]));
+
+    // +10%: z-score joins in
+    assert!(flags(10.0, &["confidence"]));
+    assert!(flags(10.0, &["zscore"]));
+    assert!(!flags(10.0, &["ewma"]));
+
+    // +25%: not enough for ewma
+    assert!(!flags(25.0, &["ewma"]));
+
+    // +50%: large enough for all three = trip policy all
+    assert!(flags(50.0, &["confidence"]));
+    assert!(flags(50.0, &["zscore"]));
+    assert!(flags(50.0, &["ewma"]));
+    assert!({
+        let mut values = step_baseline();
+        values.push(150.0);
+        gate(&series(&values), &options(), &config_with(&ALL_CHECKS))
+    });
+}
+
+#[test]
+fn gradual_drift_caught_by_confidence_not_ewma() {
+    // Drift of +1% per commit
+    // z-score - flags early then its baseline inflates
+    // ewma - never sees a big enough step
+    // confidence - keeps flagging
+    let mut values = step_baseline();
+    for k in 1..=60 {
+        values.push(100.0 + k as f64 + if k % 2 == 0 { 3.0 } else { -3.0 });
+    }
+
+    let (zscore, _) = flags_on_stream(&values, &config_with(&["zscore"]), &options());
+    let (confidence, _) = flags_on_stream(&values, &config_with(&["confidence"]), &options());
+    let (ewma, _) = flags_on_stream(&values, &config_with(&["ewma"]), &options());
+    println!("drift flags: zscore={} confidence={} ewma={}", zscore, confidence, ewma);
+
+    assert_eq!(ewma, 0);
+    assert!(zscore < 15, "zscore flagged {} times", zscore);
+    assert!(confidence > 40, "confidence flagged only {} times", confidence);
+
+    // z-score flags early but after while its mean starts tracking drifted points
+    let history = series(&values);
+    let config = config_with(&["zscore"]);
+    let late = (values.len() - 20..values.len())
+        .filter(|&i| gate(&history[..=i], &options(), &config))
+        .count();
+    assert_eq!(late, 0);
+}
+
+#[test]
+fn improvement_never_flags() {
+    // Running faster is not regression
+    let mut config = config_with(&ALL_CHECKS);
+    config.policy = Policy::Any;
+    assert!(!gate(&history_with(30.0), &options(), &config));
+}
+
+#[test]
+fn detection_after_mean_shift_differs_per_check() {
+    // Thirty points at +10% per level
+    // z-score - flags on arrival then goes silent
+    // ewma - never flags, smoothed average climbs in too small steps
+    // confidence - keeps flagging while window remembers healthy level
+    let mut values = step_baseline();
+    for i in 0..30 {
+        values.push(110.0 + if i % 2 == 0 { 3.0 } else { -3.0 });
+    }
+
+    // The baseline never flags, so every count comes from after the shift
+    let (zscore, _) = flags_on_stream(&values, &config_with(&["zscore"]), &options());
+    let (confidence, _) = flags_on_stream(&values, &config_with(&["confidence"]), &options());
+    let (ewma, _) = flags_on_stream(&values, &config_with(&["ewma"]), &options());
+    println!("after +10% shift: zscore={} confidence={} ewma={}", zscore, confidence, ewma);
+
+    assert_eq!(ewma, 0);
+    assert!(zscore >= 1, "z-score must flag the arrival");
+    assert!(confidence > zscore, "confidence must keep flagging after the z-score silences");
 }
 
 // Statistical check selection and verdict combination
@@ -418,15 +583,12 @@ fn ewma_controls_sensitivity() {
 #[test]
 fn policy_decides() {
     // 102.5: zscore passes, confidence flags, policy decides end result
-    let mut history = noisy_baseline();
-    history.push(point("mean", 102.5));
-
     let mut config = config_with(&["zscore", "confidence"]);
     config.policy = Policy::Any;
-    assert_regression(calculate_stats(&history, &options(), &config));
+    assert!(gate(&history_with(102.5), &options(), &config));
 
     config.policy = Policy::All;
-    assert!(calculate_stats(&history, &options(), &config).is_ok());
+    assert!(!gate(&history_with(102.5), &options(), &config));
 }
 
 #[test]
@@ -436,25 +598,15 @@ fn config_window_limits_history() {
     let mut history: Vec<PerfData> = (0..20)
         .map(|i| point("mean", if i % 2 == 0 { 150.0 } else { 50.0 }))
         .collect();
-    history.extend((0..10).map(|_| point("mean", 100.0)));
+    history.extend(series(&[100.0; 10]));
     history.push(point("mean", 100.5));
 
     let mut config = config_with(&["zscore"]);
     config.zscore.window = 11;
-    assert_regression(calculate_stats(&history, &options(), &config));
+    assert!(gate(&history, &options(), &config));
 
     config.zscore.window = 100;
-    assert!(calculate_stats(&history, &options(), &config).is_ok());
-}
-
-#[test]
-fn check_required_metric_missing() {
-    // Every check requires "mean" key in history
-    let mut history: Vec<PerfData> = (0..20).map(|_| point("min", 100.0)).collect();
-    history.push(point("min", 300.0));
-
-    let config = config_with(&["zscore", "ewma", "confidence"]);
-    assert!(calculate_stats(&history, &options(), &config).is_ok());
+    assert!(!gate(&history, &options(), &config));
 }
 
 // Configuration file parsing
