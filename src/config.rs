@@ -55,7 +55,7 @@ pub struct Zscore {
 #[serde(deny_unknown_fields, default)]
 pub struct Ewma {
     pub alpha: f64,
-    // flag when the smoothed change exceeds this value (0.2 = 20%)
+    // flag when the smoothed change exceeds this value (0.1 = 10%)
     pub threshold: f64,
     pub window: usize,
 }
@@ -83,7 +83,7 @@ impl Default for Confidence {
 
 impl Default for Ewma {
     fn default() -> Self {
-        Ewma { alpha: 0.2, threshold: 0.2, window: 100 }
+        Ewma { alpha: 0.2, threshold: 0.1, window: 100 }
     }
 }
 
@@ -134,8 +134,8 @@ window = 100
 [ewma]
 # smoothing factor, higher = more emphasis on recent values
 alpha = 0.2
-# flag when the smoothed change exceeds this value (0.2 = 20%)
-threshold = 0.2
+# flag when the smoothed change exceeds this value (0.1 = 10%)
+threshold = 0.1
 window = 100
 
 [confidence]
