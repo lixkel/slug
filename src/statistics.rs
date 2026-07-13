@@ -30,7 +30,7 @@ impl CheckVerdict {
         CheckVerdict::Judged(CheckReport { flagged: false, value, threshold, line })
     }
 
-    fn flagged(value: f64, threshold: f64, line: String) -> CheckVerdict {
+    pub fn flagged(value: f64, threshold: f64, line: String) -> CheckVerdict {
         CheckVerdict::Judged(CheckReport { flagged: true, value, threshold, line: Some(line) })
     }
 
@@ -100,7 +100,7 @@ pub fn run_checks(history: &[PerfData], options: &CliOptions, config: &Config) -
 
     let mut verdicts: Vec<CheckVerdict> = Vec::new();
     for check in &registry(config) {
-        if !config.enabled.iter().any(|name| name == check.name) {
+        if !config.check_is_on(check.name) {
             continue;
         }
 
@@ -140,6 +140,45 @@ pub fn combine(verdicts: &[CheckVerdict], policy: Policy) -> TestReport {
     };
 
     TestReport { flagged, reasons }
+}
+
+// Did the confidence check flag last run commits in row, nothing stored
+pub fn confidence_run(history: &[PerfData], options: &CliOptions, config: &Config) -> Result<Option<String>, SlugError> {
+    let k = config.confidence.run;
+
+    if k < 2 || !config.check_is_on("confidence") {
+        return Ok(None);
+    }
+    if history.len() < k {
+        return Ok(None);
+    }
+
+    // Walk down from newest commit
+    let mut end = history.len();
+    for _ in 0..k {
+        if !confidence_flagged(&history[..end], options, config)? {
+            return Ok(None);
+        }
+        end -= 1;
+    }
+
+    Ok(Some(format!("confidence check flagged the last {} commits in a row", k)))
+}
+
+fn confidence_flagged(history: &[PerfData], options: &CliOptions, config: &Config) -> Result<bool, SlugError> {
+    let slice = tail(history, config.confidence.window);
+
+    if slice.len() < config.min_samples {
+        return Ok(false);
+    }
+    if !slice.last().unwrap().map.contains_key("mean") {
+        return Ok(false);
+    }
+
+    match evaluate_confidence(slice, options)? {
+        CheckVerdict::Judged(report) => Ok(report.flagged),
+        _ => Ok(false),
+    }
 }
 
 // Newest measurement of a metric plus the historical distribution it is judged against

@@ -71,6 +71,9 @@ pub struct Confidence {
     // higher level = fewer false alarms
     pub level: f64,
     pub window: usize,
+    // fail when check flags this many commits in a row, regardless of policy
+    // catches slow drifts that policy misses (0 = off)
+    pub run: usize,
 }
 
 impl Default for Zscore {
@@ -81,7 +84,7 @@ impl Default for Zscore {
 
 impl Default for Confidence {
     fn default() -> Self {
-        Confidence { level: 0.95, window: 100 }
+        Confidence { level: 0.95, window: 100, run: 2 }
     }
 }
 
@@ -95,6 +98,10 @@ impl Config {
     // Largest window any check needs
     pub fn max_window(&self) -> usize {
         self.zscore.window.max(self.ewma.window).max(self.confidence.window)
+    }
+
+    pub fn check_is_on(&self, name: &str) -> bool {
+        self.enabled.iter().any(|enabled| enabled == name)
     }
 
     // Reject bad configs
@@ -136,6 +143,10 @@ impl Config {
         // Number(0, 1) has no percentage equivalent
         if !(self.confidence.level > 0.0 && self.confidence.level < 1.0) {
             return Err(SlugError::config("confidence level must be between 0 and 1"));
+        }
+
+        if self.confidence.run == 1 {
+            return Err(SlugError::config("confidence run must be 0 (off) or at least 2"));
         }
 
         Ok(())
@@ -196,6 +207,9 @@ window = 100
 # higher level = fewer false alarms
 level = 0.95
 window = 100
+# fail when check flags this many commits in a row, regardless of policy
+# catches slow drifts that policy misses (0 = off)
+run = 2
 ";
 
 // Write the example config to the repository root

@@ -89,10 +89,21 @@ fn run() -> Result<Option<String>, SlugError> {
         let mut window = dbm_git::get_latest_n(&slug_git, &name, config.max_window())?;
         window.push(entry);
 
-        let verdicts = statistics::run_checks(&window, &options, &config)?;
+        let mut verdicts = statistics::run_checks(&window, &options, &config)?;
+        let mut report = statistics::combine(&verdicts, config.policy);
+
+        // Run rule fires regardless of policy
+        if !report.flagged {
+            if let Some(reason) = statistics::confidence_run(&window, &options, &config)? {
+                report.flagged = true;
+                report.reasons.push(reason.clone());
+                let run = config.confidence.run as f64;
+                verdicts.push(statistics::CheckVerdict::flagged(run, run, reason));
+            }
+        }
+
         terms::print_verdicts(&verdicts);
 
-        let report = statistics::combine(&verdicts, config.policy);
         if report.flagged {
             failed.push(format!("{}: {}", name, report.reasons.join("; ")));
         }
