@@ -1,6 +1,7 @@
 use crate::parser::PerfData;
 use crate::git::SlugGit;
 use crate::dbm_csv;
+use crate::terms;
 use csv::Writer;
 use std::io::{BufReader, Cursor};
 use crate::errors::SlugError;
@@ -48,7 +49,7 @@ pub fn insert(slug_git: &SlugGit, data: &Vec<PerfData>) -> Result<(), SlugError>
     // Keep loose objects from piling up
     if commit_hash.ends_with('0') {
         if let Err(e) = slug_git.gc_auto() {
-            eprintln!("Warning: git gc --auto failed: {}", e);
+            terms::warn(&format!("Warning: git gc --auto failed: {}", e));
         }
     }
 

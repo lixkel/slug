@@ -8,7 +8,6 @@ pub enum SlugError {
     Cli(String),
     Parsing(String),
     Config(String),
-    PerformanceRegression(String),
 }
 
 impl SlugError {
@@ -24,9 +23,6 @@ impl SlugError {
         SlugError::Config(msg.into())
     }
 
-    pub fn regression(msg: impl Into<String>) -> Self {
-        SlugError::PerformanceRegression(msg.into())
-    }
 }
 
 impl fmt::Display for SlugError {
@@ -38,7 +34,6 @@ impl fmt::Display for SlugError {
             SlugError::Cli(msg) => write!(f, "CLI error: {}", msg),
             SlugError::Parsing(msg) => write!(f, "Parsing error: {}", msg),
             SlugError::Config(msg) => write!(f, "Config error: {}", msg),
-            SlugError::PerformanceRegression(msg) => write!(f, "Performance regression detected: {}", msg),
         }
     }
 }

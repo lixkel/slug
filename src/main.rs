@@ -5,6 +5,7 @@ mod parser;
 mod lib_parsers;
 mod units;
 mod statistics;
+mod terms;
 mod dbm_csv;
 mod dbm_git;
 mod errors;
@@ -12,7 +13,6 @@ mod errors;
 mod tests;
 
 use errors::SlugError;
-use std::io::{self, Write};
 use std::process::ExitCode;
 
 // Exit codes, to differentiate between regression error and generic error
@@ -30,24 +30,26 @@ impl Exit {
 
 fn main() -> ExitCode {
     match run() {
-        Ok(()) => Exit::Success.trigger(),
-        Err(SlugError::PerformanceRegression(msg)) => {
-            eprintln!("Performance regression: {}", msg);
+        Ok(None) => Exit::Success.trigger(),
+        Ok(Some(msg)) => {
+            terms::error(&format!("Performance regression {}", msg));
             Exit::Regression.trigger()
         }
         Err(e) => {
-            eprintln!("{}", e);
+            terms::error(&e.to_string());
             Exit::Error.trigger()
         }
     }
 }
 
-fn run() -> Result<(), SlugError> {
+// Ok(Some(report)) = Slug found regression
+// Err = Slug itself failed
+fn run() -> Result<Option<String>, SlugError> {
     let config = config::load_or_default()?;
     let options = cli::parse_args(&config)?;
 
     if options.subcommand.is_some() {
-        return run_subcommand(&options);
+        return run_subcommand(&options).map(|()| None);
     }
 
     let reader = cli::get_reader(&options.file)?;
@@ -72,31 +74,34 @@ fn run() -> Result<(), SlugError> {
 
     if options.write {
         dbm_git::insert(&slug_git, &data)?;
-        println!("Recorded to {}", slug_git.notes_ref);
+        terms::line(&format!("Recorded to {}", slug_git.notes_ref));
     } else {
-        println!("Dry run, nothing written (use --record to store)");
+        terms::line("Dry run, nothing written (use --record to store)");
     }
 
     // Check every benchmark against its own history (reads exclude HEAD's fresh note)
-    let mut regressions: Vec<String> = Vec::new();
+    let total = data.len();
+    let mut failed: Vec<String> = Vec::new();
     for entry in data {
         let name = entry.name.clone();
-        println!("\n\x1b[1mChecks for benchmark {}\x1b[0m", name);
+        terms::section(&format!("Checks for benchmark {}", name));
 
         let mut window = dbm_git::get_latest_n(&slug_git, &name, config.max_window())?;
         window.push(entry);
 
-        match statistics::calculate_stats(&window, &options, &config) {
-            Ok(()) => {}
-            Err(SlugError::PerformanceRegression(msg)) => regressions.push(format!("{}: {}", name, msg)),
-            Err(e) => return Err(e),
+        let verdicts = statistics::run_checks(&window, &options, &config)?;
+        terms::print_verdicts(&verdicts);
+
+        let report = statistics::combine(&verdicts, config.policy);
+        if report.flagged {
+            failed.push(format!("{}: {}", name, report.reasons.join("; ")));
         }
     }
 
-    if regressions.is_empty() {
-        return Ok(());
+    if failed.is_empty() {
+        return Ok(None);
     }
-    Err(SlugError::regression(regressions.join("\n")))
+    Ok(Some(format!("in {} of {} benchmarks:\n  {}", failed.len(), total, failed.join("\n  "))))
 }
 
 fn run_subcommand(options: &cli::CliOptions) -> Result<(), SlugError> {
@@ -110,29 +115,20 @@ fn run_subcommand(options: &cli::CliOptions) -> Result<(), SlugError> {
     }
 }
 
-// Ask yes/no question, anything except yes means no
-fn confirm(question: &str) -> Result<bool, SlugError> {
-    print!("{} [y/N] ", question);
-    io::stdout().flush()?;
-    let mut answer = String::new();
-    io::stdin().read_line(&mut answer)?;
-    Ok(matches!(answer.trim(), "y" | "Y" | "yes" | "Yes"))
-}
-
 fn clean(options: &cli::CliOptions) -> Result<(), SlugError> {
     let slug_git = options.storage.open()?;
-    if !confirm(&format!("Delete all Slug history in {}?", slug_git.notes_ref))? {
-        println!("Aborted, nothing deleted");
+    if !terms::confirm(&format!("Delete all Slug history in {}?", slug_git.notes_ref))? {
+        terms::line("Aborted, nothing deleted");
         return Ok(());
     }
     if !slug_git.clean()? {
-        println!("Nothing to clean, no slug data found");
+        terms::line("Nothing to clean, no slug data found");
         return Ok(());
     }
-    println!("Cleaning successful");
+    terms::line("Cleaning successful");
     if matches!(options.storage, dbm_git::Store::Shared) {
-        println!("To delete the shared history from the remote, run:");
-        println!("    git push origin --delete {}", slug_git.notes_ref);
+        terms::line("To delete the shared history from the remote, run:");
+        terms::line(&format!("    git push origin --delete {}", slug_git.notes_ref));
     }
     Ok(())
 }
@@ -140,11 +136,11 @@ fn clean(options: &cli::CliOptions) -> Result<(), SlugError> {
 fn prune() -> Result<(), SlugError> {
     let removed = git::prune()?;
     if removed.is_empty() {
-        println!("Nothing to prune, everything is still reachable");
+        terms::line("Nothing to prune, everything is still reachable");
     } else {
-        println!("Pruned {} unreachable record(s)", removed.len());
-        println!("To update the shared history on the remote as well, run:");
-        println!("    git push origin refs/notes/slug-shared");
+        terms::line(&format!("Pruned {} unreachable record(s)", removed.len()));
+        terms::line("To update the shared history on the remote as well, run:");
+        terms::line("    git push origin refs/notes/slug-shared");
     }
     Ok(())
 }
@@ -153,10 +149,10 @@ fn history(options: &cli::CliOptions) -> Result<(), SlugError> {
     let slug_git = options.storage.open()?;
     let exports = dbm_git::export(&slug_git, options.target.as_deref())?;
     if exports.is_empty() {
-        println!("No history found");
+        terms::line("No history found");
         return Ok(());
     }
 
-    print!("{}", dbm_csv::format_export(&exports));
+    terms::raw(&dbm_csv::format_export(&exports));
     Ok(())
 }

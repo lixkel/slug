@@ -2,6 +2,7 @@ use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
 use crate::errors::SlugError;
+use crate::terms;
 
 // Slug config file
 // Read slug.toml from the repository root
@@ -152,6 +153,6 @@ pub fn write_example() -> Result<(), SlugError> {
         return Err(SlugError::config(format!("{} already exists", path.display())));
     }
     fs::write(&path, EXAMPLE_CONFIG)?;
-    println!("Created {}", path.display());
+    terms::line(&format!("Created {}", path.display()));
     Ok(())
 }

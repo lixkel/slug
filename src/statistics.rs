@@ -67,39 +67,6 @@ macro_rules! add_stat_checks {
     };
 }
 
-// Run statistical tests and then combine their output
-pub fn calculate_stats(history: &[PerfData], options: &CliOptions, config: &Config) -> Result<(), SlugError> {
-    let verdicts = run_checks(history, options, config)?;
-
-    for verdict in &verdicts {
-        if let Some(text) = render(verdict) {
-            println!("{}", text);
-        }
-    }
-
-    let report = combine(&verdicts, config.policy);
-    if report.flagged {
-        return Err(SlugError::regression(report.reasons.join("; ")));
-    }
-    Ok(())
-}
-
-fn render(verdict: &CheckVerdict) -> Option<String> {
-    match verdict {
-        CheckVerdict::Skipped => None,
-        CheckVerdict::TooFewSamples { check, have } => {
-            Some(format!("  Too few samples for {} ({} of {})", check, have, MIN_SAMPLES))
-        }
-        CheckVerdict::Judged(report) => report.line.as_ref().map(|line| {
-            if report.flagged {
-                format!("  flag  {}", line)
-            } else {
-                format!("  pass  {}", line)
-            }
-        }),
-    }
-}
-
 // Run checks selected in config, each over its own window
 pub fn run_checks(history: &[PerfData], options: &CliOptions, config: &Config) -> Result<Vec<CheckVerdict>, SlugError> {
     if history.is_empty() {

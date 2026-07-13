@@ -7,6 +7,7 @@ use std::env;
 use crate::errors::SlugError;
 use crate::dbm_git::Store;
 use crate::config::Config;
+use crate::terms;
 
 pub struct CliOptions {
     pub file: Option<String>,
@@ -31,7 +32,7 @@ fn print_usage(program: &str, opts: Options) {
         "Usage: {prog} -t LIBRARY [-f FILE] [--local | --shared] [--record] [--zscore THRESHOLD] [--ewma ALPHA] [--confidence LEVEL]\n       {prog} history [TEST] [--local | --shared]\n       {prog} setup\n       {prog} clean [--local | --shared]\n       {prog} prune",
         prog = program
     );
-    print!("{}", opts.usage(&brief));
+    terms::raw(&opts.usage(&brief));
 }
 
 pub fn parse_args(config: &Config) -> Result<CliOptions, SlugError> {
@@ -142,7 +143,7 @@ pub fn get_reader(file: &Option<String>) -> Result<PerfDataReader, SlugError> {
         None => {
             // Warn interactive users who probably forgot -f, stay quiet when piped
             if io::stdin().is_terminal() {
-                eprintln!("No -f given, reading benchmark output from stdin (Ctrl-D to end)");
+                terms::warn("No -f given, reading benchmark output from stdin (Ctrl-D to end)");
             }
             Ok(PerfDataReader::Stdin(io::stdin()))
         }
