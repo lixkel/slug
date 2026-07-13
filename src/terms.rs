@@ -1,5 +1,5 @@
 use crate::errors::SlugError;
-use crate::statistics::{CheckVerdict, MIN_SAMPLES};
+use crate::statistics::CheckVerdict;
 use std::io::{self, IsTerminal, Write};
 
 // All terminal output lives here, rest of the crate uses this module
@@ -100,8 +100,11 @@ pub fn print_verdicts(verdicts: &[CheckVerdict]) {
 fn render(verdict: &CheckVerdict) -> Option<String> {
     match verdict {
         CheckVerdict::Skipped => None,
-        CheckVerdict::TooFewSamples { check, have } => {
-            Some(notice(&format!("  Too few samples for {} ({} of {})", check, have, MIN_SAMPLES)))
+        CheckVerdict::TooFewSamples { check, have, need } => {
+            Some(notice(&format!("  Too few samples for {} ({} of {})", check, have, need)))
+        }
+        CheckVerdict::MissingMetric { check, metric } => {
+            Some(notice(&format!("  Metric '{}' missing for {}", metric, check)))
         }
         CheckVerdict::Judged(report) => report.line.as_ref().map(|line| {
             if report.flagged {

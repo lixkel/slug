@@ -6,9 +6,6 @@ use crate::config::{Config, Policy};
 use statrs::distribution::{ContinuousCDF, StudentsT};
 use statrs::statistics::Statistics;
 
-// Warm up floor
-pub const MIN_SAMPLES: usize = 10;
-
 // Outcome of one statistical check
 pub struct CheckReport {
     pub flagged: bool,
@@ -22,8 +19,9 @@ pub struct CheckReport {
 
 // What check produces
 pub enum CheckVerdict {
-    Skipped,                                            // metric too sparse in the window
-    TooFewSamples { check: &'static str, have: usize }, // window below MIN_SAMPLES
+    Skipped,                                                            // metric too sparse in the window
+    TooFewSamples { check: &'static str, have: usize, need: usize },    // window below min_samples
+    MissingMetric { check: &'static str, metric: &'static str },        // newest measurement lacks required metric
     Judged(CheckReport),
 }
 
@@ -50,21 +48,46 @@ type StatEvaluator = fn(&[PerfData], &CliOptions) -> Result<CheckVerdict, SlugEr
 struct StatCheck {
     pub name: &'static str,
     pub evaluator: StatEvaluator,
-    pub required_keys: Vec<&'static str>,
+    pub metric: &'static str,
+    pub window: usize,
 }
 
 macro_rules! add_stat_checks {
-    ($checks:ident, { $($name:expr => ($evaluator:ident, [$($req:expr),*])),+ $(,)? }) => {
+    ($checks:ident, $config:ident, { $($name:ident => ($evaluator:ident, $metric:expr)),+ $(,)? }) => {
         $(
             $checks.push(
                 StatCheck {
-                    name: $name,
+                    name: stringify!($name),
                     evaluator: $evaluator,
-                    required_keys: vec![$($req),*],
+                    metric: $metric,
+                    window: $config.$name.window,
                 }
             );
         )+
     };
+}
+
+// Registry of implemented statistical tests
+fn registry(config: &Config) -> Vec<StatCheck> {
+    let mut checks: Vec<StatCheck> = Vec::new();
+
+    add_stat_checks!(checks, config, {
+        ewma => (evaluate_ewma, "mean"),
+        zscore => (evaluate_zscore, "mean"),
+        confidence => (evaluate_confidence, "mean"),
+    });
+
+    checks
+}
+
+// Names of statistical tests config may contain
+pub fn check_names() -> Vec<&'static str> {
+    registry(&Config::default()).iter().map(|check| check.name).collect()
+}
+
+// Last n points of history
+fn tail(history: &[PerfData], n: usize) -> &[PerfData] {
+    &history[history.len().saturating_sub(n)..]
 }
 
 // Run checks selected in config, each over its own window
@@ -73,37 +96,27 @@ pub fn run_checks(history: &[PerfData], options: &CliOptions, config: &Config) -
         return Ok(Vec::new());
     }
 
-    let mut checks: Vec<StatCheck> = Vec::new();
-
-    add_stat_checks!(checks, {
-        "ewma" => (evaluate_ewma, ["mean"]),
-        "zscore" => (evaluate_zscore, ["mean"]),
-        "confidence" => (evaluate_confidence, ["mean"]),
-    });
-
     let latest = history.last().unwrap();
 
     let mut verdicts: Vec<CheckVerdict> = Vec::new();
-    for check in &checks {
+    for check in &registry(config) {
         if !config.enabled.iter().any(|name| name == check.name) {
             continue;
         }
-        if check.required_keys.iter().all(|&k| latest.map.contains_key(k)) {
-            let window = match check.name {
-                "zscore" => config.zscore.window,
-                "ewma" => config.ewma.window,
-                "confidence" => config.confidence.window,
-                _ => history.len(),
-            };
-            let start = history.len().saturating_sub(window);
-            let slice = &history[start..];
 
-            // Warm up floor
-            if slice.len() < MIN_SAMPLES {
-                verdicts.push(CheckVerdict::TooFewSamples { check: check.name, have: slice.len() });
-            } else {
-                verdicts.push((check.evaluator)(slice, options)?);
-            }
+        // Enabled check that cannot run still declines visibly
+        if !latest.map.contains_key(check.metric) {
+            verdicts.push(CheckVerdict::MissingMetric { check: check.name, metric: check.metric });
+            continue;
+        }
+
+        let slice = tail(history, check.window);
+
+        // Warm up floor
+        if slice.len() < config.min_samples {
+            verdicts.push(CheckVerdict::TooFewSamples { check: check.name, have: slice.len(), need: config.min_samples });
+        } else {
+            verdicts.push((check.evaluator)(slice, options)?);
         }
     }
 
