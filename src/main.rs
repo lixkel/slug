@@ -53,12 +53,15 @@ fn run() -> Result<Option<String>, SlugError> {
     }
 
     let lib_str = options.library_type.as_ref().ok_or_else(|| SlugError::cli("Missing mandatory option -t"))?;
-    let lib = parser::Lib::from_str(lib_str).ok_or_else(|| SlugError::parsing(format!(
-        "Library must be name@version, like -t pytest@7.3.0\nhelp: available libraries: {}", parser::lib_names().join(", "))))?;
+    let lib = parser::Lib::from_str(lib_str).ok_or_else(|| SlugError::parsing(
+        "Library version must be three numbers, like -t pytest@7.3.0\nhelp: leave out the version to use the newest parser"))?;
+
+    // Resolve -t before opening input, an unknown library must not block on stdin
+    let parser = parser::resolve(&lib)?;
 
     let reader = cli::get_reader(&options.file)?;
 
-    let mut data = parser::parse(reader, &lib)?;
+    let mut data = parser::parse(reader, parser)?;
 
     if data.is_empty() {
         return Err(SlugError::parsing(format!("No benchmarks found in input\nhelp: is -t {} the library that produced this output?", lib_str)));

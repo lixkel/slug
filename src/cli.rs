@@ -29,7 +29,7 @@ pub enum PerfDataReader {
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!(
-        "Usage: {prog} -t LIBRARY [-f FILE] [--local | --shared] [--record] [--zscore THRESHOLD] [--ewma ALPHA] [--confidence LEVEL]\n       {prog} history [TEST] [--local | --shared]\n       {prog} setup\n       {prog} clean [--local | --shared]\n       {prog} prune\n\nLIBRARY is name@version, supported: {libs}",
+        "Usage: {prog} -t LIBRARY [-f FILE] [--local | --shared] [--record] [--zscore THRESHOLD] [--ewma ALPHA] [--confidence LEVEL]\n       {prog} history [TEST] [--local | --shared]\n       {prog} setup\n       {prog} clean [--local | --shared]\n       {prog} prune\n\nLIBRARY is name@version, bare name means newest, supported: {libs}",
         prog = program,
         libs = crate::parser::lib_names().join(", ")
     );

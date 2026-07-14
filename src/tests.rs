@@ -32,9 +32,10 @@ fn fixture(relative: &str) -> String {
 // Fully parse and process fixture test file with the given `name@version` library string
 fn parse_fixture(lib: &str, relative: &str) -> Result<Vec<PerfData>, SlugError> {
     let path = Some(fixture(relative));
-    let reader = cli::get_reader(&path)?;
     let lib = Lib::from_str(lib).expect("library string needs to be valid");
-    parser::parse(reader, &lib)
+    let parser = parser::resolve(&lib)?;
+    let reader = cli::get_reader(&path)?;
+    parser::parse(reader, parser)
 }
 
 // Finds a specific benchmark by name, fails if it is missing
@@ -159,14 +160,18 @@ fn version_ordering_is_semantic() {
 fn lib_splits_name_version() {
     let lib = Lib::from_str("pyperf@2.7.0").unwrap();
     assert_eq!(lib.name, "pyperf");
-    assert_eq!(lib.version, Version::from_str("2.7.0").unwrap());
+    assert_eq!(lib.version, Version::from_str("2.7.0"));
 
     // Names may contain hyphens, only char @ separates the version
     let hyphenated = Lib::from_str("google-benchmark@1.8.3").unwrap();
     assert_eq!(hyphenated.name, "google-benchmark");
-    assert_eq!(hyphenated.version, Version::from_str("1.8.3").unwrap());
+    assert_eq!(hyphenated.version, Version::from_str("1.8.3"));
 
-    assert!(Lib::from_str("pyperf").is_none());
+    // No version means newest parser
+    let bare = Lib::from_str("pyperf").unwrap();
+    assert_eq!(bare.name, "pyperf");
+    assert_eq!(bare.version, None);
+
     assert!(Lib::from_str("pyperf@2.7").is_none());
 }
 
@@ -270,6 +275,11 @@ fn bad_input_fails_loud() {
 fn newer_request_resolves_to_closest_lower_parser() {
     // No parser for 2.9.9 => 2.7.0 parser must be selected
     assert!(parse_fixture("pyperf@2.9.9", "pyperf.txt").is_ok());
+}
+
+#[test]
+fn bare_name_resolves_to_newest_parser() {
+    assert!(parse_fixture("pyperf", "pyperf.txt").is_ok());
 }
 
 #[test]

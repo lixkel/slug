@@ -35,11 +35,11 @@ pub struct Version {
 #[derive(Debug)]
 pub struct Lib {
     pub name: String,
-    pub version: Version,
+    pub version: Option<Version>, // None = newest parser
 }
 
 // Type signature for a function that parses a library's raw output into PerfData
-type ParserFn = fn(&str) -> Result<Vec<PerfData>, SlugError>;
+pub type ParserFn = fn(&str) -> Result<Vec<PerfData>, SlugError>;
 
 struct Parser {
     pub version: Version,
@@ -118,11 +118,13 @@ impl Eq for Version {}
 
 impl Lib {
     pub fn from_str(s: &str) -> Option<Self> {
-        // Identifier is "name@version"
-        let (name, ver) = s.split_once('@')?;
+        // Identifier is "name@version", bare name means newest parser
+        let Some((name, ver)) = s.split_once('@') else {
+            return Some(Self { name: s.to_string(), version: None });
+        };
         let version = Version::from_str(ver)?;
 
-        Some(Self { name: name.to_string(), version })
+        Some(Self { name: name.to_string(), version: Some(version) })
     }
 }
 
@@ -150,25 +152,41 @@ pub fn lib_names() -> Vec<String> {
     names
 }
 
-pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<Vec<PerfData>, SlugError> {
+// Pick parser for library request, before any input is read
+// -t fails without opening stdin
+pub fn resolve(lib: &Lib) -> Result<ParserFn, SlugError> {
     let parsers = registry();
 
     let versions = parsers.get(&lib.name)
         .ok_or_else(|| SlugError::parsing(format!(
             "No parser registered for library '{}', available: {}", lib.name, lib_names().join(", "))))?;
 
-    // Select highest parser version that is <= than the requested 
+    // Select highest parser version that is <= than requested
     // Each parsers version is the minimum library version it supports
     // So the closest lower or equal entry is the correct one
-    // If the requested version predates every registered parser no compatible parser exists
-    let closest = versions.iter()
-        .filter(|p| p.version <= lib.version)
-        .max_by(|a, b| a.version.cmp(&b.version))
-        .ok_or_else(|| SlugError::parsing(format!(
-            "No parser for '{}' compatible with version {}.{}.{}",
-            lib.name, lib.version.major, lib.version.minor, lib.version.patch
-        )))?;
+    // If no version was passed newest parser is selected
+    let mut closest: Option<&Parser> = None;
+    for parser in versions {
+        let too_new = lib.version.as_ref().is_some_and(|wanted| &parser.version > wanted);
+        let better = closest.map_or(true, |best| parser.version > best.version);
+        if !too_new && better {
+            closest = Some(parser);
+        }
+    }
 
+    // If requested version predates every registered one, no parser exists
+    match closest {
+        Some(parser) => Ok(parser.parser),
+        None => {
+            let wanted = lib.version.as_ref().expect("bare name always matches the newest parser");
+            Err(SlugError::parsing(format!(
+                "No parser for '{}' compatible with version {}.{}.{}",
+                lib.name, wanted.major, wanted.minor, wanted.patch)))
+        }
+    }
+}
+
+pub fn parse(reader: cli::PerfDataReader, parser: ParserFn) -> Result<Vec<PerfData>, SlugError> {
     let mut s = String::new();
 
     match reader { // TODO: move this to cli
@@ -176,6 +194,5 @@ pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<Vec<PerfData>, Sl
         cli::PerfDataReader::File(mut r) => r.read_to_string(&mut s)?,
     };
 
-    let data = (closest.parser)(&s)?;
-    Ok(data)
+    parser(&s)
 }
