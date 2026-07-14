@@ -47,14 +47,14 @@ struct StatCheck {
 }
 
 macro_rules! add_stat_checks {
-    ($checks:ident, $config:ident, { $($name:ident => ($evaluator:ident, $metric:expr)),+ $(,)? }) => {
+    ($checks:ident, $config:ident, { $($name:expr => ($field:ident, $evaluator:ident, $metric:expr)),+ $(,)? }) => {
         $(
             $checks.push(
                 StatCheck {
-                    name: stringify!($name),
+                    name: $name,
                     evaluator: $evaluator,
                     metric: $metric,
-                    window: $config.$name.window,
+                    window: $config.$field.window,
                 }
             );
         )+
@@ -66,8 +66,8 @@ fn registry(config: &Config) -> Vec<StatCheck> {
     let mut checks: Vec<StatCheck> = Vec::new();
 
     add_stat_checks!(checks, config, {
-        ewma => (evaluate_ewma, "mean"),
-        confidence => (evaluate_confidence, "mean"),
+        "ewma" => (ewma, evaluate_ewma, "mean"),
+        "prediction-bound" => (prediction_bound, evaluate_prediction_bound, "mean"),
     });
 
     checks
@@ -134,11 +134,11 @@ pub fn combine(verdicts: &[CheckVerdict], policy: Policy) -> bool {
     }
 }
 
-// Did the confidence check flag last run commits in row, nothing stored
-pub fn confidence_run(history: &[PerfData], options: &CliOptions, config: &Config) -> Result<Option<String>, SlugError> {
-    let k = config.confidence.run;
+// Did the prediction-bound check flag last run commits in row, nothing stored
+pub fn prediction_bound_run(history: &[PerfData], options: &CliOptions, config: &Config) -> Result<Option<String>, SlugError> {
+    let k = config.prediction_bound.run;
 
-    if k < 2 || !config.check_is_on("confidence") {
+    if k < 2 || !config.check_is_on("prediction-bound") {
         return Ok(None);
     }
     if history.len() < k {
@@ -148,17 +148,17 @@ pub fn confidence_run(history: &[PerfData], options: &CliOptions, config: &Confi
     // Walk down from newest commit
     let mut end = history.len();
     for _ in 0..k {
-        if !confidence_flagged(&history[..end], options, config)? {
+        if !prediction_bound_flagged(&history[..end], options, config)? {
             return Ok(None);
         }
         end -= 1;
     }
 
-    Ok(Some(format!("confidence check flagged the last {} commits in a row", k)))
+    Ok(Some(format!("prediction-bound check flagged the last {} commits in a row", k)))
 }
 
-fn confidence_flagged(history: &[PerfData], options: &CliOptions, config: &Config) -> Result<bool, SlugError> {
-    let slice = tail(history, config.confidence.window);
+fn prediction_bound_flagged(history: &[PerfData], options: &CliOptions, config: &Config) -> Result<bool, SlugError> {
+    let slice = tail(history, config.prediction_bound.window);
 
     if slice.len() < config.min_samples {
         return Ok(false);
@@ -167,7 +167,7 @@ fn confidence_flagged(history: &[PerfData], options: &CliOptions, config: &Confi
         return Ok(false);
     }
 
-    match evaluate_confidence(slice, options)? {
+    match evaluate_prediction_bound(slice, options)? {
         CheckVerdict::Judged(report) => Ok(report.flagged),
         _ => Ok(false),
     }
@@ -201,7 +201,7 @@ fn sample(history: &[PerfData], metric: &str) -> Option<Sample> {
     })
 }
 
-pub fn evaluate_confidence(history: &[PerfData], options: &CliOptions) -> Result<CheckVerdict, SlugError> {
+pub fn evaluate_prediction_bound(history: &[PerfData], options: &CliOptions) -> Result<CheckVerdict, SlugError> {
     const METRIC: &str = "mean";
 
     let Some(s) = sample(history, METRIC) else {
@@ -212,11 +212,11 @@ pub fn evaluate_confidence(history: &[PerfData], options: &CliOptions) -> Result
     // mean + t(level, n-1) * std_dev * sqrt(1 + 1/n)
     // Student's t because mean and std-dev are just estimates from n points
     let t = StudentsT::new(0.0, 1.0, s.n - 1.0)
-        .map_err(|e| SlugError::config(format!("confidence check: {}", e)))?
-        .inverse_cdf(options.confidence_level);
+        .map_err(|e| SlugError::config(format!("prediction-bound check: {}", e)))?
+        .inverse_cdf(options.prediction_level);
     let upper_bound = s.mean + t * s.std_dev * (1.0 + 1.0 / s.n).sqrt();
 
-    let level_pct = options.confidence_level * 100.0;
+    let level_pct = options.prediction_level * 100.0;
     let bound = units::format_ns(upper_bound);
     let current = units::format_ns(s.current);
 
@@ -224,10 +224,10 @@ pub fn evaluate_confidence(history: &[PerfData], options: &CliOptions) -> Result
         // How far the new measurement overshoots the recent average
         let above_pct = (s.current / s.mean - 1.0) * 100.0;
         let text = format!("{}, {:+.1}% above the recent average, {:.0}% bound {}", current, above_pct, level_pct, bound);
-        Ok(CheckVerdict::flagged("confidence", s.current, upper_bound, text))
+        Ok(CheckVerdict::flagged("prediction-bound", s.current, upper_bound, text))
     } else {
         let text = format!("{} within {:.0}% bound {}", current, level_pct, bound);
-        Ok(CheckVerdict::passed("confidence", s.current, upper_bound, text))
+        Ok(CheckVerdict::passed("prediction-bound", s.current, upper_bound, text))
     }
 }
 
@@ -254,20 +254,35 @@ pub fn ewma_calc(values: &[PerfData], alpha: f64) -> Vec<f64> {
     averages
 }
 
-// Exponential weighted moving average evaluation
+// Exponential weighted moving average control chart
 pub fn evaluate_ewma(history: &[PerfData], options: &CliOptions) -> Result<CheckVerdict, SlugError> {
-    let avg = ewma_calc(history, options.ewma_alpha);
+    const METRIC: &str = "mean";
 
-    // Calculate percentual change in last two values
-    let len = avg.len();
-    let change = (avg[len - 1] - avg[len - 2]) / avg[len - 2];
+    let Some(s) = sample(history, METRIC) else {
+        return Ok(CheckVerdict::Skipped);
+    };
 
-    let text = format!("{:+.1}% (threshold {:.0}%)", change * 100.0, options.ewma_threshold * 100.0);
+    let alpha = options.ewma_alpha;
 
-    // Comparing this way ensures NaN flags
-    if change < options.ewma_threshold {
-        Ok(CheckVerdict::passed("ewma", change, options.ewma_threshold, text))
+    // Smoothed level of the series, newest measurement folded in
+    let level = *ewma_calc(history, alpha).last().unwrap();
+
+    // At steady state the EWMA statistic has standard deviation
+    // sd * sqrt(alpha / (2 - alpha)), so an L-sigma upper control limit is
+    // mean + L * sd * sqrt(alpha / (2 - alpha)). One-sided: only slowdowns flag,
+    // and a sustained shift accumulates in the smoothed level until it crosses.
+    let ewma_sigma = s.std_dev * (alpha / (2.0 - alpha)).sqrt();
+    let upper_limit = s.mean + options.ewma_limit * ewma_sigma;
+
+    let level_fmt = units::format_ns(level);
+    let limit_fmt = units::format_ns(upper_limit);
+
+    if level > upper_limit {
+        let above_pct = (level / s.mean - 1.0) * 100.0;
+        let text = format!("smoothed {}, {:+.1}% above baseline, limit {} (L={:.1})", level_fmt, above_pct, limit_fmt, options.ewma_limit);
+        Ok(CheckVerdict::flagged("ewma", level, upper_limit, text))
     } else {
-        Ok(CheckVerdict::flagged("ewma", change, options.ewma_threshold, text))
+        let text = format!("smoothed {} within limit {} (L={:.1})", level_fmt, limit_fmt, options.ewma_limit);
+        Ok(CheckVerdict::passed("ewma", level, upper_limit, text))
     }
 }

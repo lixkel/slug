@@ -10,14 +10,14 @@ use crate::config::{Config, Policy};
 use crate::dbm_git::Store;
 use crate::errors::SlugError;
 use crate::parser::{self, Lib, PerfData, Version};
-use crate::statistics::{combine, confidence_run, evaluate_confidence, evaluate_ewma, run_checks, CheckReport, CheckVerdict};
+use crate::statistics::{combine, prediction_bound_run, evaluate_prediction_bound, evaluate_ewma, run_checks, CheckReport, CheckVerdict};
 use crate::units;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Normal};
 use std::collections::HashMap;
 
-const ALL_CHECKS: [&str; 2] = ["ewma", "confidence"];
+const ALL_CHECKS: [&str; 2] = ["ewma", "prediction-bound"];
 
 // Checks if two floats are "close enough" to being equal
 fn close(actual: f64, expected: f64) -> bool {
@@ -80,8 +80,8 @@ fn options() -> CliOptions {
         subcommand: None,
         target: None,
         ewma_alpha: config.ewma.alpha,
-        ewma_threshold: config.ewma.threshold,
-        confidence_level: config.confidence.level,
+        ewma_limit: config.ewma.limit,
+        prediction_level: config.prediction_bound.level,
     }
 }
 
@@ -322,37 +322,37 @@ fn every_check_skips_short_history() {
 }
 
 #[test]
-fn confidence_controls_sensitivity() {
-    // Higher confidence level widens interval flagged at 90%, tolerated at 99.9%
-    let config = config_with(&["confidence"]);
+fn prediction_bound_controls_sensitivity() {
+    // Higher prediction-bound level widens interval flagged at 90%, tolerated at 99.9%
+    let config = config_with(&["prediction-bound"]);
 
     let mut strict = options();
-    strict.confidence_level = 0.90;
+    strict.prediction_level = 0.90;
     assert!(gate(&history_with(103.0), &strict, &config));
 
     let mut lenient = options();
-    lenient.confidence_level = 0.999;
+    lenient.prediction_level = 0.999;
     assert!(!gate(&history_with(103.0), &lenient, &config));
 }
 
 #[test]
 fn ewma_controls_sensitivity() {
-    // Lower threshold tightens check flagged at 5%, tolerated at 50%
+    // Lower limit tightens check flagged at L=2, tolerated at L=3
     let config = config_with(&["ewma"]);
 
     let mut strict = options();
-    strict.ewma_threshold = 0.05;
-    assert!(gate(&history_with(200.0), &strict, &config));
+    strict.ewma_limit = 2.0; // limit 101.33, level above it
+    assert!(gate(&reference_history(110.0), &strict, &config));
 
     let mut lenient = options();
-    lenient.ewma_threshold = 0.5;
-    assert!(!gate(&history_with(200.0), &lenient, &config));
+    lenient.ewma_limit = 3.0; // limit 102.0, level below it
+    assert!(!gate(&reference_history(110.0), &lenient, &config));
 }
 
 #[test]
-fn confidence_increase_from_flat_baseline() {
+fn prediction_bound_increase_from_flat_baseline() {
     // With zero spread t-interval collapses to the mean
-    let config = config_with(&["confidence"]);
+    let config = config_with(&["prediction-bound"]);
 
     // Zero spread means any increase flags
     let mut history = series(&[100.0; 15]);
@@ -373,23 +373,25 @@ fn reference_history(newest: f64) -> Vec<PerfData> {
 }
 
 #[test]
-fn confidence_bound_matches_pseudo_oracle() {
+fn prediction_bound_matches_pseudo_oracle() {
     // upper bound = 100 + t(0.95, 9) * 2 * sqrt(1 + 1/10) = 103.8451701269
     // where t(0.95, 9) = 1.8331129327 (scipy.stats.t.ppf(0.95, 9))
-    let report = judged(evaluate_confidence(&reference_history(110.0), &options()));
+    let report = judged(evaluate_prediction_bound(&reference_history(110.0), &options()));
     assert!(close(report.threshold, 103.8451701269));
     assert!(report.flagged); // 110 is above bound
 
-    let report = judged(evaluate_confidence(&reference_history(103.844), &options()));
+    let report = judged(evaluate_prediction_bound(&reference_history(103.844), &options()));
     assert!(!report.flagged); // just under bound
 }
 
 #[test]
-fn ewma_change_matches_pseudo_oracle() {
-    // smoothed averages 99.8286755840 -> 101.8629404672, change 2.0377563%
+fn ewma_level_matches_pseudo_oracle() {
+    // smoothed averages 99.8286755840 -> 101.8629404672
+    // limit = 100 + 3 * 2 * sqrt(0.2 / 1.8) = 102.0
     let report = judged(evaluate_ewma(&reference_history(110.0), &options()));
-    assert!(close(report.value, 0.020377563));
-    assert!(!report.flagged); // 2.04% stays under 10% threshold
+    assert!(close(report.value, 101.8629404672));
+    assert!(close(report.threshold, 102.0));
+    assert!(!report.flagged); // 101.86 stays under the 102.0 limit
 }
 
 #[test]
@@ -436,28 +438,30 @@ fn healthy_stream() -> Vec<f64> {
 }
 
 #[test]
-fn confidence_false_alarm_rate_matches_level() {
-    // Confidence false alarm rate is 5% at 0.95
+fn prediction_bound_false_alarm_rate_matches_level() {
+    // Prediction-bound false alarm rate is 5% at 0.95
     let stream = healthy_stream();
 
-    let (flagged, judged) = flags_on_stream(&stream, &config_with(&["confidence"]), &options());
+    let (flagged, judged) = flags_on_stream(&stream, &config_with(&["prediction-bound"]), &options());
     let rate = flagged as f64 / judged as f64;
-    println!("confidence 0.95 false alarm rate: {:.4}", rate);
+    println!("prediction_bound 0.95 false alarm rate: {:.4}", rate);
     assert!(rate > 0.035 && rate < 0.065, "rate {} outside [3.5%, 6.5%]", rate);
 
     let mut lenient = options();
-    lenient.confidence_level = 0.90;
-    let (flagged, judged) = flags_on_stream(&stream, &config_with(&["confidence"]), &lenient);
+    lenient.prediction_level = 0.90;
+    let (flagged, judged) = flags_on_stream(&stream, &config_with(&["prediction-bound"]), &lenient);
     let rate = flagged as f64 / judged as f64;
-    println!("confidence 0.90 false alarm rate: {:.4}", rate);
+    println!("prediction_bound 0.90 false alarm rate: {:.4}", rate);
     assert!(rate > 0.08 && rate < 0.12, "rate {} outside [8%, 12%]", rate);
 }
 
 #[test]
-fn ewma_never_false_alarms() {
-    // Smoothing suppresses noise completely
-    let (flagged, _) = flags_on_stream(&healthy_stream(), &config_with(&["ewma"]), &options());
-    assert_eq!(flagged, 0);
+fn ewma_false_alarms_are_rare() {
+    // A 3-sigma control limit should be crossed by well under 1% of healthy points
+    let (flagged, judged) = flags_on_stream(&healthy_stream(), &config_with(&["ewma"]), &options());
+    let rate = flagged as f64 / judged as f64;
+    println!("ewma L=3.0 false alarm rate: {:.4}", rate);
+    assert!(rate < 0.01, "rate {} not under 1%", rate);
 }
 
 // 50 points alternating +-3 around 100, sample std dev 3.03
@@ -467,26 +471,26 @@ fn step_baseline() -> Vec<f64> {
 
 #[test]
 fn mean_shift_size_determines_which_checks_flag() {
-    // Confidence is the most sensitive, ewma needs near 50%
+    // Prediction-bound is the most sensitive, ewma needs a much bigger step
     let flags = |step_pct: f64, enabled: &[&str]| {
         let mut values = step_baseline();
         values.push(100.0 * (1.0 + step_pct / 100.0));
         gate(&series(&values), &options(), &config_with(enabled))
     };
 
-    // +6% (two standard deviations): confidence flags, ewma does not
-    assert!(flags(6.0, &["confidence"]));
+    // +6% (two standard deviations): prediction-bound flags, ewma does not
+    assert!(flags(6.0, &["prediction-bound"]));
     assert!(!flags(6.0, &["ewma"]));
 
-    // +10%: confidence still flags, ewma still silent
-    assert!(flags(10.0, &["confidence"]));
+    // +10%: prediction-bound still flags, ewma still silent
+    assert!(flags(10.0, &["prediction-bound"]));
     assert!(!flags(10.0, &["ewma"]));
 
-    // +25%: not enough for ewma
-    assert!(!flags(25.0, &["ewma"]));
+    // +25%: now enough for ewma
+    assert!(flags(25.0, &["ewma"]));
 
     // +50%: large enough for both = trip policy all
-    assert!(flags(50.0, &["confidence"]));
+    assert!(flags(50.0, &["prediction-bound"]));
     assert!(flags(50.0, &["ewma"]));
     assert!({
         let mut values = step_baseline();
@@ -496,21 +500,21 @@ fn mean_shift_size_determines_which_checks_flag() {
 }
 
 #[test]
-fn gradual_drift_caught_by_confidence_not_ewma() {
+fn gradual_drift_caught_by_both_checks() {
     // Drift of +1% per commit
-    // ewma - never sees a big enough step
-    // confidence - keeps flagging
+    // ewma - smoothed average accumulates the drift
+    // prediction-bound - keeps flagging
     let mut values = step_baseline();
     for k in 1..=60 {
         values.push(100.0 + k as f64 + if k % 2 == 0 { 3.0 } else { -3.0 });
     }
 
-    let (confidence, _) = flags_on_stream(&values, &config_with(&["confidence"]), &options());
+    let (prediction_bound, _) = flags_on_stream(&values, &config_with(&["prediction-bound"]), &options());
     let (ewma, _) = flags_on_stream(&values, &config_with(&["ewma"]), &options());
-    println!("drift flags: confidence={} ewma={}", confidence, ewma);
+    println!("drift flags: prediction_bound={} ewma={}", prediction_bound, ewma);
 
-    assert_eq!(ewma, 0);
-    assert!(confidence > 40, "confidence flagged only {} times", confidence);
+    assert!(ewma > 10, "ewma should catch sustained drift, flagged {}", ewma);
+    assert!(prediction_bound > 40, "prediction_bound flagged only {} times", prediction_bound);
 }
 
 #[test]
@@ -524,28 +528,28 @@ fn improvement_never_flags() {
 #[test]
 fn detection_after_mean_shift_differs_per_check() {
     // Thirty points at +10% per level
-    // ewma - never flags, smoothed average climbs in too small steps
-    // confidence - keeps flagging while window remembers healthy level
+    // ewma - flags while smoothed average climbs across the shift
+    // prediction-bound - keeps flagging while window remembers healthy level
     let mut values = step_baseline();
     for i in 0..30 {
         values.push(110.0 + if i % 2 == 0 { 3.0 } else { -3.0 });
     }
 
     // The baseline never flags, so every count comes from after the shift
-    let (confidence, _) = flags_on_stream(&values, &config_with(&["confidence"]), &options());
+    let (prediction_bound, _) = flags_on_stream(&values, &config_with(&["prediction-bound"]), &options());
     let (ewma, _) = flags_on_stream(&values, &config_with(&["ewma"]), &options());
-    println!("after +10% shift: confidence={} ewma={}", confidence, ewma);
+    println!("after +10% shift: prediction_bound={} ewma={}", prediction_bound, ewma);
 
-    assert_eq!(ewma, 0);
-    assert!(confidence > 10, "confidence must keep flagging after the shift");
+    assert!(ewma > 0, "ewma must flag as the smoothed level crosses the shift");
+    assert!(prediction_bound > 10, "prediction_bound must keep flagging after the shift");
 }
 
 // Statistical check selection and verdict combination
 
 #[test]
 fn policy_decides() {
-    // 102.5: ewma passes, confidence flags, policy decides end result
-    let mut config = config_with(&["ewma", "confidence"]);
+    // 102.5: ewma passes, prediction-bound flags, policy decides end result
+    let mut config = config_with(&["ewma", "prediction-bound"]);
     config.policy = Policy::Any;
     assert!(gate(&history_with(102.5), &options(), &config));
 
@@ -563,11 +567,11 @@ fn config_window_limits_history() {
     history.extend(series(&[100.0; 10]));
     history.push(point("mean", 100.5));
 
-    let mut config = config_with(&["confidence"]);
-    config.confidence.window = 11;
+    let mut config = config_with(&["prediction-bound"]);
+    config.prediction_bound.window = 11;
     assert!(gate(&history, &options(), &config));
 
-    config.confidence.window = 100;
+    config.prediction_bound.window = 100;
     assert!(!gate(&history, &options(), &config));
 }
 
@@ -583,19 +587,19 @@ fn streak(n: usize, value: f64) -> Vec<PerfData> {
 #[test]
 fn run_rule_fires_after_n_consecutive_flags() {
     let history = streak(2, 120.0);
-    let config = config_with(&["confidence"]);
+    let config = config_with(&["prediction-bound"]);
 
-    let reason = confidence_run(&history, &options(), &config).unwrap();
-    assert_eq!(reason.unwrap(), "confidence check flagged the last 2 commits in a row");
+    let reason = prediction_bound_run(&history, &options(), &config).unwrap();
+    assert_eq!(reason.unwrap(), "prediction-bound check flagged the last 2 commits in a row");
 }
 
 #[test]
 fn run_rule_ignores_isolated_flag() {
     // We need at least two consecutive flags
     let history = streak(1, 120.0);
-    let config = config_with(&["confidence"]);
+    let config = config_with(&["prediction-bound"]);
 
-    let reason = confidence_run(&history, &options(), &config).unwrap();
+    let reason = prediction_bound_run(&history, &options(), &config).unwrap();
     assert!(reason.is_none());
 }
 
@@ -604,13 +608,13 @@ fn run_rule_disarmed_by_config() {
     // run = 0 turns the rule off
     let history = streak(2, 120.0);
 
-    let mut config = config_with(&["confidence"]);
-    config.confidence.run = 0;
-    let reason = confidence_run(&history, &options(), &config).unwrap();
+    let mut config = config_with(&["prediction-bound"]);
+    config.prediction_bound.run = 0;
+    let reason = prediction_bound_run(&history, &options(), &config).unwrap();
     assert!(reason.is_none());
 
     let config = config_with(&[]);
-    let reason = confidence_run(&history, &options(), &config).unwrap();
+    let reason = prediction_bound_run(&history, &options(), &config).unwrap();
     assert!(reason.is_none());
 }
 
@@ -620,9 +624,9 @@ fn run_rule_streak_needs_warmed_up_prefixes() {
     let mut values = vec![100.0; 8];
     values.extend([120.0, 120.0]);
     let history = series(&values);
-    let config = config_with(&["confidence"]);
+    let config = config_with(&["prediction-bound"]);
 
-    let reason = confidence_run(&history, &options(), &config).unwrap();
+    let reason = prediction_bound_run(&history, &options(), &config).unwrap();
     assert!(reason.is_none());
 }
 
@@ -630,10 +634,10 @@ fn run_rule_streak_needs_warmed_up_prefixes() {
 
 #[test]
 fn partial_config_defaults() {
-    let config: Config = toml::from_str("[confidence]\nlevel = 0.99").unwrap();
+    let config: Config = toml::from_str("[prediction-bound]\nlevel = 0.99").unwrap();
 
-    assert_eq!(config.confidence.level, 0.99);
-    assert_eq!(config.confidence.window, 100); // untouched default
+    assert_eq!(config.prediction_bound.level, 0.99);
+    assert_eq!(config.prediction_bound.window, 100); // untouched default
     assert_eq!(config.ewma.alpha, 0.2);
     assert!(config.enabled.iter().any(|name| name == "ewma"));
 }
@@ -642,7 +646,7 @@ fn partial_config_defaults() {
 fn config_rejects_unknown() {
     // Typos must fail loudly
     assert!(toml::from_str::<Config>("thresold = 3.0").is_err());
-    assert!(toml::from_str::<Config>("[confidence]\nthresold = 3.0").is_err());
+    assert!(toml::from_str::<Config>("[prediction-bound]\nthresold = 3.0").is_err());
 }
 
 #[test]

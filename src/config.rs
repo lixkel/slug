@@ -20,7 +20,8 @@ pub struct Config {
     // No check judges until window has this many points
     pub min_samples: usize,
     pub ewma: Ewma,
-    pub confidence: Confidence,
+    #[serde(rename = "prediction-bound")]
+    pub prediction_bound: PredictionBound,
 }
 
 // any = check1 OR check2 OR check3 OR ...
@@ -36,11 +37,11 @@ pub enum Policy {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            enabled: vec!["ewma".to_string(), "confidence".to_string()],
+            enabled: vec!["ewma".to_string(), "prediction-bound".to_string()],
             policy: Policy::All,
             min_samples: 10,
             ewma: Ewma::default(),
-            confidence: Confidence::default(),
+            prediction_bound: PredictionBound::default(),
         }
     }
 }
@@ -49,14 +50,14 @@ impl Default for Config {
 #[serde(deny_unknown_fields, default)]
 pub struct Ewma {
     pub alpha: f64,
-    // flag when the smoothed change exceeds this value (0.1 = 10%)
-    pub threshold: f64,
+    // control-limit width in standard deviations, lower = more sensitive
+    pub limit: f64,
     pub window: usize,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, default)]
-pub struct Confidence {
+pub struct PredictionBound {
     // flag a new measurement above 95% (level = 0.95) of other measurements
     // higher level = fewer false alarms
     pub level: f64,
@@ -66,22 +67,22 @@ pub struct Confidence {
     pub run: usize,
 }
 
-impl Default for Confidence {
+impl Default for PredictionBound {
     fn default() -> Self {
-        Confidence { level: 0.95, window: 100, run: 2 }
+        PredictionBound { level: 0.95, window: 100, run: 2 }
     }
 }
 
 impl Default for Ewma {
     fn default() -> Self {
-        Ewma { alpha: 0.2, threshold: 0.1, window: 100 }
+        Ewma { alpha: 0.2, limit: 3.0, window: 100 }
     }
 }
 
 impl Config {
     // Largest window any check needs
     pub fn max_window(&self) -> usize {
-        self.ewma.window.max(self.confidence.window)
+        self.ewma.window.max(self.prediction_bound.window)
     }
 
     pub fn check_is_on(&self, name: &str) -> bool {
@@ -109,16 +110,16 @@ impl Config {
             return Err(SlugError::config("min_samples must be at least 3"));
         }
 
-        for (check, window) in [("ewma", self.ewma.window), ("confidence", self.confidence.window)] {
+        for (check, window) in [("ewma", self.ewma.window), ("prediction-bound", self.prediction_bound.window)] {
             if window < self.min_samples {
                 return Err(SlugError::config(format!(
                     "{} window ({}) is below min_samples ({}), the check would never judge", check, window, self.min_samples)));
             }
         }
 
-        // Negative flags improvements, NaN never flags
-        if !(self.ewma.threshold > 0.0) {
-            return Err(SlugError::config("EWMA threshold must be positive"));
+        // Zero or negative limit would flag always
+        if !(self.ewma.limit > 0.0) {
+            return Err(SlugError::config("EWMA limit must be positive"));
         }
 
         // alpha = 0 freezes average, above 1 is unstable
@@ -127,12 +128,12 @@ impl Config {
         }
 
         // Number(0, 1) has no percentage equivalent
-        if !(self.confidence.level > 0.0 && self.confidence.level < 1.0) {
-            return Err(SlugError::config("confidence level must be between 0 and 1"));
+        if !(self.prediction_bound.level > 0.0 && self.prediction_bound.level < 1.0) {
+            return Err(SlugError::config("prediction-bound level must be between 0 and 1"));
         }
 
-        if self.confidence.run == 1 {
-            return Err(SlugError::config("confidence run must be 0 (off) or at least 2"));
+        if self.prediction_bound.run == 1 {
+            return Err(SlugError::config("prediction-bound run must be 0 (off) or at least 2"));
         }
 
         Ok(())
@@ -170,7 +171,7 @@ const EXAMPLE_CONFIG: &str = "\
 # Slug configuration
 
 # Which checks to run, and how to combine their verdicts.
-enabled = [\"ewma\", \"confidence\"]
+enabled = [\"ewma\", \"prediction-bound\"]
 # any = flag if ANY of enabled checks flag
 # all = flag only if ALL checks flag
 policy = \"all\"
@@ -181,11 +182,11 @@ min_samples = 10
 [ewma]
 # smoothing factor, higher = more emphasis on recent values
 alpha = 0.2
-# flag when the smoothed change exceeds this value (0.1 = 10%)
-threshold = 0.1
+# control-limit width in standard deviations (L); lower = more sensitive
+limit = 3.0
 window = 100
 
-[confidence]
+[prediction-bound]
 # flag a new measurement above 95% (level = 0.95) of other measurements
 # higher level = fewer false alarms
 level = 0.95

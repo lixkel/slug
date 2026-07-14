@@ -152,9 +152,9 @@ fn print_check_rows(verdicts: &[CheckVerdict]) {
     }
 }
 
-// Fixed column width, longest check name is confidence
+// Fixed column width, longest check name is prediction-bound
 fn print_row(tag: &str, check: &str, text: &str) {
-    println!("        {}  {:<10}  {}", tag, check, text);
+    println!("        {}  {:<16}  {}", tag, check, text);
 }
 
 // Compact "check text" pieces for the one line summary

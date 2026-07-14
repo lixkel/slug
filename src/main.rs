@@ -99,9 +99,9 @@ fn run() -> Result<Option<String>, SlugError> {
 
         // Run rule fires regardless of policy
         if !flagged {
-            if let Some(reason) = statistics::confidence_run(&window, &options, &config)? {
+            if let Some(reason) = statistics::prediction_bound_run(&window, &options, &config)? {
                 flagged = true;
-                let run = config.confidence.run as f64;
+                let run = config.prediction_bound.run as f64;
                 verdicts.push(statistics::CheckVerdict::flagged("run rule", run, run, reason));
             }
         }
