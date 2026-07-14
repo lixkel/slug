@@ -19,7 +19,6 @@ pub struct Config {
     pub policy: Policy,
     // No check judges until window has this many points
     pub min_samples: usize,
-    pub zscore: Zscore,
     pub ewma: Ewma,
     pub confidence: Confidence,
 }
@@ -37,22 +36,13 @@ pub enum Policy {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            enabled: vec!["ewma".to_string(), "zscore".to_string(), "confidence".to_string()],
+            enabled: vec!["ewma".to_string(), "confidence".to_string()],
             policy: Policy::All,
             min_samples: 10,
-            zscore: Zscore::default(),
             ewma: Ewma::default(),
             confidence: Confidence::default(),
         }
     }
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub struct Zscore {
-    pub threshold: f64,
-    // How many recent points to evaluate against
-    pub window: usize,
 }
 
 #[derive(Debug, Deserialize)]
@@ -76,12 +66,6 @@ pub struct Confidence {
     pub run: usize,
 }
 
-impl Default for Zscore {
-    fn default() -> Self {
-        Zscore { threshold: 3.0, window: 100 }
-    }
-}
-
 impl Default for Confidence {
     fn default() -> Self {
         Confidence { level: 0.95, window: 100, run: 2 }
@@ -97,7 +81,7 @@ impl Default for Ewma {
 impl Config {
     // Largest window any check needs
     pub fn max_window(&self) -> usize {
-        self.zscore.window.max(self.ewma.window).max(self.confidence.window)
+        self.ewma.window.max(self.confidence.window)
     }
 
     pub fn check_is_on(&self, name: &str) -> bool {
@@ -125,20 +109,16 @@ impl Config {
             return Err(SlugError::config("min_samples must be at least 3"));
         }
 
-        for (check, window) in [("zscore", self.zscore.window), ("ewma", self.ewma.window), ("confidence", self.confidence.window)] {
+        for (check, window) in [("ewma", self.ewma.window), ("confidence", self.confidence.window)] {
             if window < self.min_samples {
                 return Err(SlugError::config(format!(
                     "{} window ({}) is below min_samples ({}), the check would never judge", check, window, self.min_samples)));
             }
         }
 
+        // Negative flags improvements, NaN never flags
         if !(self.ewma.threshold > 0.0) {
             return Err(SlugError::config("EWMA threshold must be positive"));
-        }
-
-        // Negative flags improvements, NaN never flags
-        if !(self.zscore.threshold > 0.0) {
-            return Err(SlugError::config("zscore threshold must be positive"));
         }
 
         // alpha = 0 freezes average, above 1 is unstable
@@ -190,19 +170,13 @@ const EXAMPLE_CONFIG: &str = "\
 # Slug configuration
 
 # Which checks to run, and how to combine their verdicts.
-enabled = [\"ewma\", \"zscore\", \"confidence\"]
+enabled = [\"ewma\", \"confidence\"]
 # any = flag if ANY of enabled checks flag
 # all = flag only if ALL checks flag
 policy = \"all\"
 
 # no check judges until its window has this many points
 min_samples = 10
-
-[zscore]
-# flag when value is this many standard deviations above the mean
-threshold = 3.0
-# how many recent points to evaluate against
-window = 100
 
 [ewma]
 # smoothing factor, higher = more emphasis on recent values

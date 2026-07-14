@@ -10,14 +10,14 @@ use crate::config::{Config, Policy};
 use crate::dbm_git::Store;
 use crate::errors::SlugError;
 use crate::parser::{self, Lib, PerfData, Version};
-use crate::statistics::{combine, confidence_run, evaluate_confidence, evaluate_ewma, evaluate_zscore, run_checks, CheckReport, CheckVerdict};
+use crate::statistics::{combine, confidence_run, evaluate_confidence, evaluate_ewma, run_checks, CheckReport, CheckVerdict};
 use crate::units;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Normal};
 use std::collections::HashMap;
 
-const ALL_CHECKS: [&str; 3] = ["zscore", "ewma", "confidence"];
+const ALL_CHECKS: [&str; 2] = ["ewma", "confidence"];
 
 // Checks if two floats are "close enough" to being equal
 fn close(actual: f64, expected: f64) -> bool {
@@ -79,7 +79,6 @@ fn options() -> CliOptions {
         write: false,
         subcommand: None,
         target: None,
-        zscore_threshold: config.zscore.threshold,
         ewma_alpha: config.ewma.alpha,
         ewma_threshold: config.ewma.threshold,
         confidence_level: config.confidence.level,
@@ -337,20 +336,6 @@ fn confidence_controls_sensitivity() {
 }
 
 #[test]
-fn zscore_controls_sensitivity() {
-    // Lowering threshold tightens check flagged at 1.5, tolerated at 4.0
-    let config = config_with(&["zscore"]);
-
-    let mut strict = options();
-    strict.zscore_threshold = 1.5;
-    assert!(gate(&history_with(103.0), &strict, &config));
-
-    let mut lenient = options();
-    lenient.zscore_threshold = 4.0;
-    assert!(!gate(&history_with(103.0), &lenient, &config));
-}
-
-#[test]
 fn ewma_controls_sensitivity() {
     // Lower threshold tightens check flagged at 5%, tolerated at 50%
     let config = config_with(&["ewma"]);
@@ -365,8 +350,9 @@ fn ewma_controls_sensitivity() {
 }
 
 #[test]
-fn zscore_increase_from_flat_baseline() {
-    let config = config_with(&["zscore"]);
+fn confidence_increase_from_flat_baseline() {
+    // With zero spread t-interval collapses to the mean
+    let config = config_with(&["confidence"]);
 
     // Zero spread means any increase flags
     let mut history = series(&[100.0; 15]);
@@ -384,14 +370,6 @@ fn zscore_increase_from_flat_baseline() {
 // Ten point baseline with mean exactly 100 and standard deviation 2
 fn reference_history(newest: f64) -> Vec<PerfData> {
     series(&[100.0, 102.0, 98.0, 101.0, 99.0, 103.0, 97.0, 100.0, 102.0, 98.0, newest])
-}
-
-#[test]
-fn zscore_matches_pseudo_oracle() {
-    // (110 - 100) / 2 = 5.0
-    let report = judged(evaluate_zscore(&reference_history(110.0), &options()));
-    assert!(close(report.value, 5.0));
-    assert!(report.flagged); // 5.0 is above default threshold 3.0
 }
 
 #[test]
@@ -476,15 +454,6 @@ fn confidence_false_alarm_rate_matches_level() {
 }
 
 #[test]
-fn zscore_false_alarms_are_rare() {
-    // Three standard deviations should be crossed by under 1% of healthy points
-    let (flagged, judged) = flags_on_stream(&healthy_stream(), &config_with(&["zscore"]), &options());
-    let rate = flagged as f64 / judged as f64;
-    println!("zscore 3.0 false alarm rate: {:.4}", rate);
-    assert!(rate < 0.01, "rate {} not under 1%", rate);
-}
-
-#[test]
 fn ewma_never_false_alarms() {
     // Smoothing suppresses noise completely
     let (flagged, _) = flags_on_stream(&healthy_stream(), &config_with(&["ewma"]), &options());
@@ -505,22 +474,19 @@ fn mean_shift_size_determines_which_checks_flag() {
         gate(&series(&values), &options(), &config_with(enabled))
     };
 
-    // +6% (two standard deviations): only confidence flags
+    // +6% (two standard deviations): confidence flags, ewma does not
     assert!(flags(6.0, &["confidence"]));
-    assert!(!flags(6.0, &["zscore"]));
     assert!(!flags(6.0, &["ewma"]));
 
-    // +10%: z-score joins in
+    // +10%: confidence still flags, ewma still silent
     assert!(flags(10.0, &["confidence"]));
-    assert!(flags(10.0, &["zscore"]));
     assert!(!flags(10.0, &["ewma"]));
 
     // +25%: not enough for ewma
     assert!(!flags(25.0, &["ewma"]));
 
-    // +50%: large enough for all three = trip policy all
+    // +50%: large enough for both = trip policy all
     assert!(flags(50.0, &["confidence"]));
-    assert!(flags(50.0, &["zscore"]));
     assert!(flags(50.0, &["ewma"]));
     assert!({
         let mut values = step_baseline();
@@ -532,7 +498,6 @@ fn mean_shift_size_determines_which_checks_flag() {
 #[test]
 fn gradual_drift_caught_by_confidence_not_ewma() {
     // Drift of +1% per commit
-    // z-score - flags early then its baseline inflates
     // ewma - never sees a big enough step
     // confidence - keeps flagging
     let mut values = step_baseline();
@@ -540,22 +505,12 @@ fn gradual_drift_caught_by_confidence_not_ewma() {
         values.push(100.0 + k as f64 + if k % 2 == 0 { 3.0 } else { -3.0 });
     }
 
-    let (zscore, _) = flags_on_stream(&values, &config_with(&["zscore"]), &options());
     let (confidence, _) = flags_on_stream(&values, &config_with(&["confidence"]), &options());
     let (ewma, _) = flags_on_stream(&values, &config_with(&["ewma"]), &options());
-    println!("drift flags: zscore={} confidence={} ewma={}", zscore, confidence, ewma);
+    println!("drift flags: confidence={} ewma={}", confidence, ewma);
 
     assert_eq!(ewma, 0);
-    assert!(zscore < 15, "zscore flagged {} times", zscore);
     assert!(confidence > 40, "confidence flagged only {} times", confidence);
-
-    // z-score flags early but after while its mean starts tracking drifted points
-    let history = series(&values);
-    let config = config_with(&["zscore"]);
-    let late = (values.len() - 20..values.len())
-        .filter(|&i| gate(&history[..=i], &options(), &config))
-        .count();
-    assert_eq!(late, 0);
 }
 
 #[test]
@@ -569,7 +524,6 @@ fn improvement_never_flags() {
 #[test]
 fn detection_after_mean_shift_differs_per_check() {
     // Thirty points at +10% per level
-    // z-score - flags on arrival then goes silent
     // ewma - never flags, smoothed average climbs in too small steps
     // confidence - keeps flagging while window remembers healthy level
     let mut values = step_baseline();
@@ -578,22 +532,20 @@ fn detection_after_mean_shift_differs_per_check() {
     }
 
     // The baseline never flags, so every count comes from after the shift
-    let (zscore, _) = flags_on_stream(&values, &config_with(&["zscore"]), &options());
     let (confidence, _) = flags_on_stream(&values, &config_with(&["confidence"]), &options());
     let (ewma, _) = flags_on_stream(&values, &config_with(&["ewma"]), &options());
-    println!("after +10% shift: zscore={} confidence={} ewma={}", zscore, confidence, ewma);
+    println!("after +10% shift: confidence={} ewma={}", confidence, ewma);
 
     assert_eq!(ewma, 0);
-    assert!(zscore >= 1, "z-score must flag the arrival");
-    assert!(confidence > zscore, "confidence must keep flagging after the z-score silences");
+    assert!(confidence > 10, "confidence must keep flagging after the shift");
 }
 
 // Statistical check selection and verdict combination
 
 #[test]
 fn policy_decides() {
-    // 102.5: zscore passes, confidence flags, policy decides end result
-    let mut config = config_with(&["zscore", "confidence"]);
+    // 102.5: ewma passes, confidence flags, policy decides end result
+    let mut config = config_with(&["ewma", "confidence"]);
     config.policy = Policy::Any;
     assert!(gate(&history_with(102.5), &options(), &config));
 
@@ -611,11 +563,11 @@ fn config_window_limits_history() {
     history.extend(series(&[100.0; 10]));
     history.push(point("mean", 100.5));
 
-    let mut config = config_with(&["zscore"]);
-    config.zscore.window = 11;
+    let mut config = config_with(&["confidence"]);
+    config.confidence.window = 11;
     assert!(gate(&history, &options(), &config));
 
-    config.zscore.window = 100;
+    config.confidence.window = 100;
     assert!(!gate(&history, &options(), &config));
 }
 
@@ -678,11 +630,11 @@ fn run_rule_streak_needs_warmed_up_prefixes() {
 
 #[test]
 fn partial_config_defaults() {
-    let config: Config = toml::from_str("[zscore]\nthreshold = 4.5").unwrap();
+    let config: Config = toml::from_str("[confidence]\nlevel = 0.99").unwrap();
 
-    assert_eq!(config.zscore.threshold, 4.5);
-    assert_eq!(config.zscore.window, 100); // untouched default
-    assert_eq!(config.confidence.level, 0.95);
+    assert_eq!(config.confidence.level, 0.99);
+    assert_eq!(config.confidence.window, 100); // untouched default
+    assert_eq!(config.ewma.alpha, 0.2);
     assert!(config.enabled.iter().any(|name| name == "ewma"));
 }
 
@@ -690,7 +642,7 @@ fn partial_config_defaults() {
 fn config_rejects_unknown() {
     // Typos must fail loudly
     assert!(toml::from_str::<Config>("thresold = 3.0").is_err());
-    assert!(toml::from_str::<Config>("[zscore]\nthresold = 3.0").is_err());
+    assert!(toml::from_str::<Config>("[confidence]\nthresold = 3.0").is_err());
 }
 
 #[test]

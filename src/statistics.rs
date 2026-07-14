@@ -67,7 +67,6 @@ fn registry(config: &Config) -> Vec<StatCheck> {
 
     add_stat_checks!(checks, config, {
         ewma => (evaluate_ewma, "mean"),
-        zscore => (evaluate_zscore, "mean"),
         confidence => (evaluate_confidence, "mean"),
     });
 
@@ -200,39 +199,6 @@ fn sample(history: &[PerfData], metric: &str) -> Option<Sample> {
         mean: (&values).mean(),
         std_dev: (&values).std_dev(), // sample standard deviation (Bessel's correction)
     })
-}
-
-pub fn evaluate_zscore(history: &[PerfData], options: &CliOptions) -> Result<CheckVerdict, SlugError> {
-    const METRIC: &str = "mean";
-
-    let Some(s) = sample(history, METRIC) else {
-        return Ok(CheckVerdict::Skipped);
-    };
-
-    // std_dev == 0.0
-    if s.std_dev < f64::EPSILON {
-        return Ok(if s.current > s.mean {
-            CheckVerdict::flagged(
-                "zscore",
-                f64::INFINITY,
-                options.zscore_threshold,
-                format!("{} increased from flat baseline", METRIC),
-            )
-        } else {
-            CheckVerdict::passed("zscore", 0.0, options.zscore_threshold, String::new())
-        });
-    }
-
-    let z_score = (s.current - s.mean) / s.std_dev;
-
-    let text = format!("{:.2} (threshold {:.1})", z_score, options.zscore_threshold);
-
-    // Z-score > threshold execution time is 3 standard deviations worse than average
-    if z_score > options.zscore_threshold {
-        Ok(CheckVerdict::flagged("zscore", z_score, options.zscore_threshold, text))
-    } else {
-        Ok(CheckVerdict::passed("zscore", z_score, options.zscore_threshold, text))
-    }
 }
 
 pub fn evaluate_confidence(history: &[PerfData], options: &CliOptions) -> Result<CheckVerdict, SlugError> {
