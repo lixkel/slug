@@ -49,7 +49,7 @@ pub fn insert(slug_git: &SlugGit, data: &Vec<PerfData>) -> Result<(), SlugError>
     // Keep loose objects from piling up
     if commit_hash.ends_with('0') {
         if let Err(e) = slug_git.gc_auto() {
-            terms::warn(&format!("Warning: git gc --auto failed: {}", e));
+            terms::warn(&e.to_string());
         }
     }
 

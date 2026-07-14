@@ -32,7 +32,7 @@ fn main() -> ExitCode {
     match run() {
         Ok(None) => Exit::Success.trigger(),
         Ok(Some(msg)) => {
-            terms::error(&format!("Performance regression {}", msg));
+            terms::error(&format!("performance regression {}", msg));
             Exit::Regression.trigger()
         }
         Err(e) => {
@@ -52,16 +52,16 @@ fn run() -> Result<Option<String>, SlugError> {
         return run_subcommand(&options).map(|()| None);
     }
 
-    let reader = cli::get_reader(&options.file)?;
-
     let lib_str = options.library_type.as_ref().ok_or_else(|| SlugError::cli("Missing mandatory option -t"))?;
     let lib = parser::Lib::from_str(lib_str).ok_or_else(|| SlugError::parsing(format!(
-        "Library must be name@version (like pytest@7.3.0), available: {}", parser::lib_names().join(", "))))?;
+        "Library must be name@version, like -t pytest@7.3.0\nhelp: available libraries: {}", parser::lib_names().join(", "))))?;
+
+    let reader = cli::get_reader(&options.file)?;
 
     let mut data = parser::parse(reader, &lib)?;
 
     if data.is_empty() {
-        return Err(SlugError::parsing(format!("No benchmarks found in input, is -t {} right?", lib_str)));
+        return Err(SlugError::parsing(format!("No benchmarks found in input\nhelp: is -t {} the library that produced this output?", lib_str)));
     }
 
     // Stamp every benchmark with commit it was measured on

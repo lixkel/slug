@@ -138,7 +138,9 @@ pub fn parse_args(config: &Config) -> Result<CliOptions, SlugError> {
 pub fn get_reader(file: &Option<String>) -> Result<PerfDataReader, SlugError> {
     match &file {
         Some(file_name) => {
-            let file = File::open(file_name)?;
+            // Bare io error does not say which path failed
+            let file = File::open(file_name)
+                .map_err(|e| SlugError::cli(format!("Cannot open '{}': {}", file_name, e)))?;
             Ok(PerfDataReader::File(file))
         },
         None => {

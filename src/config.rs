@@ -110,13 +110,13 @@ impl Config {
 
         if self.enabled.is_empty() {
             return Err(SlugError::config(format!(
-                "No checks enabled, available checks: {}", known.join(", "))));
+                "No checks enabled, every run would pass\nhelp: available checks: {}", known.join(", "))));
         }
 
         for name in &self.enabled {
             if !known.contains(&name.as_str()) {
                 return Err(SlugError::config(format!(
-                    "Unknown check '{}' in enabled, known checks: {}", name, known.join(", "))));
+                    "Unknown check '{}' in enabled\nhelp: known checks: {}", name, known.join(", "))));
             }
         }
 
@@ -173,10 +173,13 @@ fn config_path() -> PathBuf {
 }
 
 pub fn load_or_default() -> Result<Config, SlugError> {
-    let config = match fs::read_to_string(config_path()) {
-        Ok(text) => toml::from_str(&text)?,
+    let path = config_path();
+    // Errors name the config file, the user did not mention it on the command line
+    let config = match fs::read_to_string(&path) {
+        Ok(text) => toml::from_str(&text)
+            .map_err(|e| SlugError::config(format!("{}: {}", path.display(), e)))?,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Config::default(),
-        Err(e) => return Err(SlugError::Io(e)),
+        Err(e) => return Err(SlugError::config(format!("Cannot read {}: {}", path.display(), e))),
     };
     config.validate()?;
     Ok(config)
@@ -224,7 +227,8 @@ pub fn write_example() -> Result<(), SlugError> {
     if path.exists() {
         return Err(SlugError::config(format!("{} already exists", path.display())));
     }
-    fs::write(&path, EXAMPLE_CONFIG)?;
+    fs::write(&path, EXAMPLE_CONFIG)
+        .map_err(|e| SlugError::config(format!("Cannot write {}: {}", path.display(), e)))?;
     terms::line(&format!("Created {}", path.display()));
     Ok(())
 }

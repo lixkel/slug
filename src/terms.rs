@@ -68,14 +68,22 @@ pub fn section(text: &str) {
     println!("\n{}", paint("1", text));
 }
 
-// Print red error line to stderr
+// Print error to stderr
+// Message lines starting with "help: " render as hints
 pub fn error(text: &str) {
-    eprintln!("{}", paint_err("31", text));
+    let mut lines = text.lines();
+    eprintln!("{} {}", paint_err("1;31", "error:"), lines.next().unwrap_or(""));
+    for line in lines {
+        match line.strip_prefix("help: ") {
+            Some(hint) => eprintln!("{} {}", paint_err("1;36", "help:"), hint),
+            None => eprintln!("{}", line),
+        }
+    }
 }
 
-// Print yellow warning line to stderr
+// Print warning to stderr
 pub fn warn(text: &str) {
-    eprintln!("{}", paint_err("33", text));
+    eprintln!("{} {}", paint_err("1;33", "warning:"), text);
 }
 
 // Ask yes/no question, anything except yes means no

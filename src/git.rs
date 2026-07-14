@@ -35,7 +35,7 @@ impl SlugGit {
     }
 
     fn open(notes_ref: &str) -> Result<Self, SlugError> {
-        let repo = git2::Repository::discover(".")?;
+        let repo = discover()?;
         Ok(Self { repo, notes_ref: notes_ref.to_string() })
     }
 
@@ -234,9 +234,19 @@ impl SlugGit {
     }
 }
 
+// Find git repository root
+fn discover() -> Result<git2::Repository, SlugError> {
+    match git2::Repository::discover(".") {
+        Ok(repo) => Ok(repo),
+        Err(ref e) if e.code() == git2::ErrorCode::NotFound => Err(SlugError::git(
+            "slug must be run inside a git repository\nhelp: benchmark history is stored in git notes of the repository you benchmark")),
+        Err(e) => Err(e.into()),
+    }
+}
+
 // Returns HEAD's commit hash
 pub fn get_commit_hash() -> Result<String, SlugError> {
-    let repo = git2::Repository::discover(".")?;
+    let repo = discover()?;
     let head = repo.head()?;
     let commit = head.peel_to_commit()?;
     Ok(commit.id().to_string())
@@ -257,7 +267,7 @@ fn source_reachable(repo: &git2::Repository, ref_tips: &[git2::Oid], source: git
 // Drop notes whose source commit is no longer reachable from any ref (branch, remote, or tag)
 // Returns removed source commit hashes
 pub fn prune() -> Result<Vec<String>, SlugError> {
-    let repo = git2::Repository::discover(".")?;
+    let repo = discover()?;
 
     // Collect all refs that keep commits alive
     let mut ref_tips = Vec::new();

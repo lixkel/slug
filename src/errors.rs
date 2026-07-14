@@ -11,6 +11,10 @@ pub enum SlugError {
 }
 
 impl SlugError {
+    pub fn git(msg: impl Into<String>) -> Self {
+        SlugError::Git(git2::Error::from_str(&msg.into()))
+    }
+
     pub fn parsing(msg: impl Into<String>) -> Self {
         SlugError::Parsing(msg.into())
     }
@@ -28,12 +32,12 @@ impl SlugError {
 impl fmt::Display for SlugError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            SlugError::Git(err) => write!(f, "Git error: {}", err),
-            SlugError::Io(err) => write!(f, "IO error: {}", err),
-            SlugError::Csv(err) => write!(f, "CSV error: {}", err),
-            SlugError::Cli(msg) => write!(f, "CLI error: {}", msg),
-            SlugError::Parsing(msg) => write!(f, "Parsing error: {}", msg),
-            SlugError::Config(msg) => write!(f, "Config error: {}", msg),
+            SlugError::Git(err) => write!(f, "{}", err),
+            SlugError::Io(err) => write!(f, "{}", err),
+            SlugError::Csv(err) => write!(f, "{}", err),
+            SlugError::Cli(msg) => write!(f, "{}", msg),
+            SlugError::Parsing(msg) => write!(f, "{}", msg),
+            SlugError::Config(msg) => write!(f, "{}", msg),
         }
     }
 }
