@@ -29,8 +29,9 @@ pub enum PerfDataReader {
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!(
-        "Usage: {prog} -t LIBRARY [-f FILE] [--local | --shared] [--record] [--zscore THRESHOLD] [--ewma ALPHA] [--confidence LEVEL]\n       {prog} history [TEST] [--local | --shared]\n       {prog} setup\n       {prog} clean [--local | --shared]\n       {prog} prune",
-        prog = program
+        "Usage: {prog} -t LIBRARY [-f FILE] [--local | --shared] [--record] [--zscore THRESHOLD] [--ewma ALPHA] [--confidence LEVEL]\n       {prog} history [TEST] [--local | --shared]\n       {prog} setup\n       {prog} clean [--local | --shared]\n       {prog} prune\n\nLIBRARY is name@version, supported: {libs}",
+        prog = program,
+        libs = crate::parser::lib_names().join(", ")
     );
     terms::raw(&opts.usage(&brief));
 }
@@ -51,7 +52,7 @@ pub fn parse_args(config: &Config) -> Result<CliOptions, SlugError> {
     opts.optopt("f", "file", "set input file name", "FILENAME");
     opts.optopt("t", "type", "set library type", "LIBRARY");
     opts.optflag("l", "local", "use local history (default)");
-    opts.optflag("s", "shared", "use shared git history (refs/slug/shared)");
+    opts.optflag("s", "shared", "use shared git history (refs/notes/slug-shared)");
     opts.optflag("", "record", "record this run (default is dry run)");
     opts.optopt("", "zscore", "set z-score anomaly threshold (default: 3.0)", "FLOAT");
     opts.optopt("", "ewma", "set ewma smoothing factor alpha (default: 0.2)", "FLOAT");

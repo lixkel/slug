@@ -682,3 +682,9 @@ fn config_rejects_unknown() {
     assert!(toml::from_str::<Config>("thresold = 3.0").is_err());
     assert!(toml::from_str::<Config>("[zscore]\nthresold = 3.0").is_err());
 }
+
+#[test]
+fn config_rejects_empty_enabled() {
+    let config = config_with(&[]);
+    assert!(config.validate().is_err());
+}

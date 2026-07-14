@@ -107,6 +107,12 @@ impl Config {
     // Reject bad configs
     pub fn validate(&self) -> Result<(), SlugError> {
         let known = crate::statistics::check_names();
+
+        if self.enabled.is_empty() {
+            return Err(SlugError::config(format!(
+                "No checks enabled, available checks: {}", known.join(", "))));
+        }
+
         for name in &self.enabled {
             if !known.contains(&name.as_str()) {
                 return Err(SlugError::config(format!(

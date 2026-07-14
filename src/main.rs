@@ -55,7 +55,8 @@ fn run() -> Result<Option<String>, SlugError> {
     let reader = cli::get_reader(&options.file)?;
 
     let lib_str = options.library_type.as_ref().ok_or_else(|| SlugError::cli("Missing mandatory option -t"))?;
-    let lib = parser::Lib::from_str(lib_str).ok_or_else(|| SlugError::parsing("Library in bad format"))?;
+    let lib = parser::Lib::from_str(lib_str).ok_or_else(|| SlugError::parsing(format!(
+        "Library must be name@version (like pytest@7.3.0), available: {}", parser::lib_names().join(", "))))?;
 
     let mut data = parser::parse(reader, &lib)?;
 

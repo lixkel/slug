@@ -126,8 +126,8 @@ impl Lib {
     }
 }
 
-// TODO: add list parsers
-pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<Vec<PerfData>, SlugError> {
+// Registry of implemented library parsers
+fn registry() -> HashMap<String, Vec<Parser>> {
     let mut parsers: HashMap<String, Vec<Parser>> = HashMap::new();
 
     add_libs!(parsers, {
@@ -140,8 +140,22 @@ pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<Vec<PerfData>, Sl
         "benchmarkdotnet" => [(benchmarkdotnet_0_14_0, "0.14.0")]
     });
 
+    parsers
+}
+
+// Libraries slug can parse
+pub fn lib_names() -> Vec<String> {
+    let mut names: Vec<String> = registry().into_keys().collect();
+    names.sort();
+    names
+}
+
+pub fn parse(reader: cli::PerfDataReader, lib: &Lib) -> Result<Vec<PerfData>, SlugError> {
+    let parsers = registry();
+
     let versions = parsers.get(&lib.name)
-        .ok_or_else(|| SlugError::parsing(format!("No parser registered for library '{}'", lib.name)))?;
+        .ok_or_else(|| SlugError::parsing(format!(
+            "No parser registered for library '{}', available: {}", lib.name, lib_names().join(", "))))?;
 
     // Select highest parser version that is <= than the requested 
     // Each parsers version is the minimum library version it supports
