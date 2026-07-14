@@ -10,7 +10,7 @@ use crate::config::{Config, Policy};
 use crate::dbm_git::Store;
 use crate::errors::SlugError;
 use crate::parser::{self, Lib, PerfData, Version};
-use crate::statistics::{combine, evaluate_confidence, evaluate_ewma, evaluate_zscore, run_checks, CheckReport, CheckVerdict};
+use crate::statistics::{combine, confidence_run, evaluate_confidence, evaluate_ewma, evaluate_zscore, run_checks, CheckReport, CheckVerdict};
 use crate::units;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -607,6 +607,61 @@ fn config_window_limits_history() {
 
     config.zscore.window = 100;
     assert!(!gate(&history, &options(), &config));
+}
+
+// Run rule
+
+// Baseline with n newest commits at value
+fn streak(n: usize, value: f64) -> Vec<PerfData> {
+    let mut values = step_baseline();
+    values.extend(vec![value; n]);
+    series(&values)
+}
+
+#[test]
+fn run_rule_fires_after_n_consecutive_flags() {
+    let history = streak(2, 120.0);
+    let config = config_with(&["confidence"]);
+
+    let reason = confidence_run(&history, &options(), &config).unwrap();
+    assert_eq!(reason.unwrap(), "confidence check flagged the last 2 commits in a row");
+}
+
+#[test]
+fn run_rule_ignores_isolated_flag() {
+    // We need at least two consecutive flags
+    let history = streak(1, 120.0);
+    let config = config_with(&["confidence"]);
+
+    let reason = confidence_run(&history, &options(), &config).unwrap();
+    assert!(reason.is_none());
+}
+
+#[test]
+fn run_rule_disarmed_by_config() {
+    // run = 0 turns the rule off
+    let history = streak(2, 120.0);
+
+    let mut config = config_with(&["confidence"]);
+    config.confidence.run = 0;
+    let reason = confidence_run(&history, &options(), &config).unwrap();
+    assert!(reason.is_none());
+
+    let config = config_with(&[]);
+    let reason = confidence_run(&history, &options(), &config).unwrap();
+    assert!(reason.is_none());
+}
+
+#[test]
+fn run_rule_streak_needs_warmed_up_prefixes() {
+    // Ten points, older prefix has nine, below min_samples = broken streak
+    let mut values = vec![100.0; 8];
+    values.extend([120.0, 120.0]);
+    let history = series(&values);
+    let config = config_with(&["confidence"]);
+
+    let reason = confidence_run(&history, &options(), &config).unwrap();
+    assert!(reason.is_none());
 }
 
 // Configuration file parsing
