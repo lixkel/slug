@@ -82,38 +82,38 @@ fn run() -> Result<Option<String>, SlugError> {
 
     // Check every benchmark against its own history (reads exclude HEAD's fresh note)
     let total = data.len();
+    let name_width = data.iter().map(|entry| entry.name.len()).max().unwrap_or(0);
     let mut failed: Vec<String> = Vec::new();
+    terms::line("");
     for entry in data {
         let name = entry.name.clone();
-        terms::section(&format!("Checks for benchmark {}", name));
 
         let mut window = dbm_git::get_latest_n(&slug_git, &name, config.max_window())?;
         window.push(entry);
 
         let mut verdicts = statistics::run_checks(&window, &options, &config)?;
-        let mut report = statistics::combine(&verdicts, config.policy);
+        let mut flagged = statistics::combine(&verdicts, config.policy);
 
         // Run rule fires regardless of policy
-        if !report.flagged {
+        if !flagged {
             if let Some(reason) = statistics::confidence_run(&window, &options, &config)? {
-                report.flagged = true;
-                report.reasons.push(reason.clone());
+                flagged = true;
                 let run = config.confidence.run as f64;
-                verdicts.push(statistics::CheckVerdict::flagged(run, run, reason));
+                verdicts.push(statistics::CheckVerdict::flagged("run rule", run, run, reason));
             }
         }
 
-        terms::print_verdicts(&verdicts);
+        terms::benchmark_report(&name, name_width, &verdicts, flagged);
 
-        if report.flagged {
-            failed.push(format!("{}: {}", name, report.reasons.join("; ")));
+        if flagged {
+            failed.push(name);
         }
     }
 
     if failed.is_empty() {
         return Ok(None);
     }
-    Ok(Some(format!("in {} of {} benchmarks:\n  {}", failed.len(), total, failed.join("\n  "))))
+    Ok(Some(format!("in {} of {} benchmarks: {}", failed.len(), total, failed.join(", "))))
 }
 
 fn run_subcommand(options: &cli::CliOptions) -> Result<(), SlugError> {

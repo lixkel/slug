@@ -8,13 +8,14 @@ use statrs::statistics::Statistics;
 
 // Outcome of one statistical check
 pub struct CheckReport {
+    pub check: &'static str,
     pub flagged: bool,
     // These are so far only used by tests
     #[allow(dead_code)]
-    pub value: f64,           // statistic the check computed
+    pub value: f64,     // statistic the check computed
     #[allow(dead_code)]
-    pub threshold: f64,       // limit the value was judged against
-    pub line: Option<String>, // verdict sentence, None = silent
+    pub threshold: f64, // limit value was judged against
+    pub text: String,   // formatted report line, empty = silent
 }
 
 // What check produces
@@ -26,19 +27,12 @@ pub enum CheckVerdict {
 }
 
 impl CheckVerdict {
-    fn passed(value: f64, threshold: f64, line: Option<String>) -> CheckVerdict {
-        CheckVerdict::Judged(CheckReport { flagged: false, value, threshold, line })
+    fn passed(check: &'static str, value: f64, threshold: f64, text: String) -> CheckVerdict {
+        CheckVerdict::Judged(CheckReport { check, flagged: false, value, threshold, text })
     }
 
-    pub fn flagged(value: f64, threshold: f64, line: String) -> CheckVerdict {
-        CheckVerdict::Judged(CheckReport { flagged: true, value, threshold, line: Some(line) })
-    }
-
-    fn flag_reason(&self) -> Option<String> {
-        match self {
-            CheckVerdict::Judged(report) if report.flagged => report.line.clone(),
-            _ => None,
-        }
+    pub fn flagged(check: &'static str, value: f64, threshold: f64, text: String) -> CheckVerdict {
+        CheckVerdict::Judged(CheckReport { check, flagged: true, value, threshold, text })
     }
 }
 
@@ -123,23 +117,22 @@ pub fn run_checks(history: &[PerfData], options: &CliOptions, config: &Config) -
     Ok(verdicts)
 }
 
-// Combined outcome of all enabled checks for one benchmark
-pub struct TestReport {
-    pub flagged: bool,
-    pub reasons: Vec<String>,
-}
-
 // Combine verdicts of statistical tests
-pub fn combine(verdicts: &[CheckVerdict], policy: Policy) -> TestReport {
+pub fn combine(verdicts: &[CheckVerdict], policy: Policy) -> bool {
     let ran = verdicts.len();
-    let reasons: Vec<String> = verdicts.iter().filter_map(CheckVerdict::flag_reason).collect();
+    let mut flagged = 0;
+    for verdict in verdicts {
+        if let CheckVerdict::Judged(report) = verdict {
+            if report.flagged {
+                flagged += 1;
+            }
+        }
+    }
 
-    let flagged = match policy {
-        Policy::Any => !reasons.is_empty(),
-        Policy::All => ran > 0 && reasons.len() == ran,
-    };
-
-    TestReport { flagged, reasons }
+    match policy {
+        Policy::Any => flagged > 0,
+        Policy::All => ran > 0 && flagged == ran,
+    }
 }
 
 // Did the confidence check flag last run commits in row, nothing stored
@@ -220,30 +213,25 @@ pub fn evaluate_zscore(history: &[PerfData], options: &CliOptions) -> Result<Che
     if s.std_dev < f64::EPSILON {
         return Ok(if s.current > s.mean {
             CheckVerdict::flagged(
+                "zscore",
                 f64::INFINITY,
                 options.zscore_threshold,
-                format!("Z-Score: {} increased from flat baseline", METRIC),
+                format!("{} increased from flat baseline", METRIC),
             )
         } else {
-            CheckVerdict::passed(0.0, options.zscore_threshold, None)
+            CheckVerdict::passed("zscore", 0.0, options.zscore_threshold, String::new())
         });
     }
 
     let z_score = (s.current - s.mean) / s.std_dev;
 
+    let text = format!("{:.2} (threshold {:.1})", z_score, options.zscore_threshold);
+
     // Z-score > threshold execution time is 3 standard deviations worse than average
     if z_score > options.zscore_threshold {
-        Ok(CheckVerdict::flagged(
-            z_score,
-            options.zscore_threshold,
-            format!("Z-Score anomaly detected ({:.2}, threshold {:.1})", z_score, options.zscore_threshold),
-        ))
+        Ok(CheckVerdict::flagged("zscore", z_score, options.zscore_threshold, text))
     } else {
-        Ok(CheckVerdict::passed(
-            z_score,
-            options.zscore_threshold,
-            Some(format!("Z-Score within norm ({:.2})", z_score)),
-        ))
+        Ok(CheckVerdict::passed("zscore", z_score, options.zscore_threshold, text))
     }
 }
 
@@ -262,21 +250,18 @@ pub fn evaluate_confidence(history: &[PerfData], options: &CliOptions) -> Result
         .inverse_cdf(options.confidence_level);
     let upper_bound = s.mean + t * s.std_dev * (1.0 + 1.0 / s.n).sqrt();
 
+    let level_pct = options.confidence_level * 100.0;
+    let bound = units::format_ns(upper_bound);
+    let current = units::format_ns(s.current);
+
     if s.current > upper_bound {
-        Ok(CheckVerdict::flagged(
-            s.current,
-            upper_bound,
-            format!("{} {} is {:+.1}% above the recent average ({:.0}% upper bound {})",
-                METRIC, units::format_ns(s.current), (s.current / s.mean - 1.0) * 100.0,
-                options.confidence_level * 100.0, units::format_ns(upper_bound)),
-        ))
+        // How far the new measurement overshoots the recent average
+        let above_pct = (s.current / s.mean - 1.0) * 100.0;
+        let text = format!("{}, {:+.1}% above the recent average, {:.0}% bound {}", current, above_pct, level_pct, bound);
+        Ok(CheckVerdict::flagged("confidence", s.current, upper_bound, text))
     } else {
-        Ok(CheckVerdict::passed(
-            s.current,
-            upper_bound,
-            Some(format!("{} {} within the {:.0}% confidence interval (upper bound {})",
-                METRIC, units::format_ns(s.current), options.confidence_level * 100.0, units::format_ns(upper_bound))),
-        ))
+        let text = format!("{} within {:.0}% bound {}", current, level_pct, bound);
+        Ok(CheckVerdict::passed("confidence", s.current, upper_bound, text))
     }
 }
 
@@ -311,18 +296,12 @@ pub fn evaluate_ewma(history: &[PerfData], options: &CliOptions) -> Result<Check
     let len = avg.len();
     let change = (avg[len - 1] - avg[len - 2]) / avg[len - 2];
 
+    let text = format!("{:+.1}% (threshold {:.0}%)", change * 100.0, options.ewma_threshold * 100.0);
+
     // Comparing this way ensures NaN flags
     if change < options.ewma_threshold {
-        Ok(CheckVerdict::passed(
-            change,
-            options.ewma_threshold,
-            Some(format!("EWMA change {:+.1}% (threshold {:.0}%)", change * 100.0, options.ewma_threshold * 100.0)),
-        ))
+        Ok(CheckVerdict::passed("ewma", change, options.ewma_threshold, text))
     } else {
-        Ok(CheckVerdict::flagged(
-            change,
-            options.ewma_threshold,
-            format!("EWMA change {:+.1}% exceeds threshold {:.0}%", change * 100.0, options.ewma_threshold * 100.0),
-        ))
+        Ok(CheckVerdict::flagged("ewma", change, options.ewma_threshold, text))
     }
 }

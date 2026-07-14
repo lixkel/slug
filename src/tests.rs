@@ -98,7 +98,7 @@ fn config_with(enabled: &[&str]) -> Config {
 // The pipeline verdict for one benchmark: enabled checks and policy
 fn gate(history: &[PerfData], opts: &CliOptions, config: &Config) -> bool {
     let verdicts = run_checks(history, opts, config).unwrap();
-    combine(&verdicts, config.policy).flagged
+    combine(&verdicts, config.policy)
 }
 
 // Unwraps check's return value, fails if check declined to judge

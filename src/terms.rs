@@ -53,6 +53,11 @@ fn notice(text: &str) -> String {
     paint("33", text)
 }
 
+// Bold
+fn bold(text: &str) -> String {
+    paint("1", text)
+}
+
 // Print a plain line to stdout
 pub fn line(text: &str) {
     println!("{}", text);
@@ -61,11 +66,6 @@ pub fn line(text: &str) {
 // Print raw text to stdout
 pub fn raw(text: &str) {
     print!("{}", text);
-}
-
-// Print bold section heading
-pub fn section(text: &str) {
-    println!("\n{}", paint("1", text));
 }
 
 // Print error to stderr
@@ -95,31 +95,75 @@ pub fn confirm(question: &str) -> Result<bool, SlugError> {
     Ok(matches!(answer.trim(), "y" | "Y" | "yes" | "Yes"))
 }
 
-// Print each check verdict that has something to say
-pub fn print_verdicts(verdicts: &[CheckVerdict]) {
+// Render one bechmark report
+// Flagged benchmarks expand
+pub fn benchmark_report(name: &str, name_width: usize, verdicts: &[CheckVerdict], flagged: bool) {
+    if flagged {
+        println!("  {}  {}", flag("FLAG"), bold(name));
+        print_check_rows(verdicts);
+        return;
+    }
+
+    // skip if every check was skipped, otherwise benchmark passed
+    let mut tag = notice("skip");
     for verdict in verdicts {
-        if let Some(text) = render(verdict) {
-            println!("{}", text);
+        if matches!(verdict, CheckVerdict::Judged(_)) {
+            tag = pass("pass");
+            break;
+        }
+    }
+
+    let padded = format!("{:<width$}", name, width = name_width);
+    println!("  {}  {}  {}", tag, bold(&padded), check_summaries(verdicts).join(", "));
+}
+
+// One verdict as (tag, check, text), None means show nothing
+fn describe(verdict: &CheckVerdict) -> Option<(&'static str, &'static str, String)> {
+    match verdict {
+        CheckVerdict::Skipped => None,
+        CheckVerdict::TooFewSamples { check, have, need } => {
+            Some(("skip", check, format!("{}/{} samples", have, need)))
+        }
+        CheckVerdict::MissingMetric { check, metric } => {
+            Some(("skip", check, format!("no {} metric", metric)))
+        }
+        CheckVerdict::Judged(report) => {
+            // Silent pass has nothing to show
+            if !report.flagged && report.text.is_empty() {
+                return None;
+            }
+            let tag = if report.flagged { "flag" } else { "pass" };
+            Some((tag, report.check, report.text.clone()))
         }
     }
 }
 
-// One check verdict as a display line, None = the check has nothing to say
-fn render(verdict: &CheckVerdict) -> Option<String> {
-    match verdict {
-        CheckVerdict::Skipped => None,
-        CheckVerdict::TooFewSamples { check, have, need } => {
-            Some(notice(&format!("  Too few samples for {} ({} of {})", check, have, need)))
+// Expanded block, one aligned colored row per check
+fn print_check_rows(verdicts: &[CheckVerdict]) {
+    for verdict in verdicts {
+        if let Some((tag, check, text)) = describe(verdict) {
+            let tag = match tag {
+                "flag" => flag(tag),
+                "pass" => pass(tag),
+                _ => notice(tag),
+            };
+            print_row(&tag, check, &text);
         }
-        CheckVerdict::MissingMetric { check, metric } => {
-            Some(notice(&format!("  Metric '{}' missing for {}", metric, check)))
-        }
-        CheckVerdict::Judged(report) => report.line.as_ref().map(|line| {
-            if report.flagged {
-                format!("  {}  {}", flag("flag"), line)
-            } else {
-                format!("  {}  {}", pass("pass"), line)
-            }
-        }),
     }
+}
+
+// Fixed column width, longest check name is confidence
+fn print_row(tag: &str, check: &str, text: &str) {
+    println!("        {}  {:<10}  {}", tag, check, text);
+}
+
+// Compact "check text" pieces for the one line summary
+fn check_summaries(verdicts: &[CheckVerdict]) -> Vec<String> {
+    let mut pieces = Vec::new();
+    for verdict in verdicts {
+        if let Some((_, check, text)) = describe(verdict) {
+            pieces.push(format!("{} {}", check, text));
+        }
+    }
+    pieces
 }
