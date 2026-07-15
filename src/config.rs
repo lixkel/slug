@@ -20,7 +20,6 @@ pub struct Config {
     // No check judges until window has this many points
     pub min_samples: usize,
     pub zscore: Zscore,
-    pub ewma: Ewma,
     #[serde(rename = "prediction-bound")]
     pub prediction_bound: PredictionBound,
 }
@@ -38,11 +37,10 @@ pub enum Policy {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            enabled: vec!["zscore".to_string(), "ewma".to_string(), "prediction-bound".to_string()],
+            enabled: vec!["zscore".to_string(), "prediction-bound".to_string()],
             policy: Policy::All,
             min_samples: 10,
             zscore: Zscore::default(),
-            ewma: Ewma::default(),
             prediction_bound: PredictionBound::default(),
         }
     }
@@ -53,15 +51,6 @@ impl Default for Config {
 pub struct Zscore {
     pub threshold: f64,
     // How many recent points to evaluate against
-    pub window: usize,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub struct Ewma {
-    pub alpha: f64,
-    // control-limit width in standard deviations, lower = more sensitive
-    pub limit: f64,
     pub window: usize,
 }
 
@@ -89,16 +78,10 @@ impl Default for PredictionBound {
     }
 }
 
-impl Default for Ewma {
-    fn default() -> Self {
-        Ewma { alpha: 0.2, limit: 3.0, window: 100 }
-    }
-}
-
 impl Config {
     // Largest window any check needs
     pub fn max_window(&self) -> usize {
-        self.zscore.window.max(self.ewma.window).max(self.prediction_bound.window)
+        self.zscore.window.max(self.prediction_bound.window)
     }
 
     pub fn check_is_on(&self, name: &str) -> bool {
@@ -126,21 +109,11 @@ impl Config {
             return Err(SlugError::config("min_samples must be at least 3"));
         }
 
-        for (check, window) in [("zscore", self.zscore.window), ("ewma", self.ewma.window), ("prediction-bound", self.prediction_bound.window)] {
+        for (check, window) in [("zscore", self.zscore.window), ("prediction-bound", self.prediction_bound.window)] {
             if window < self.min_samples {
                 return Err(SlugError::config(format!(
                     "{} window ({}) is below min_samples ({}), the check would never judge", check, window, self.min_samples)));
             }
-        }
-
-        // Zero or negative limit would flag always
-        if !(self.ewma.limit > 0.0) {
-            return Err(SlugError::config("EWMA limit must be positive"));
-        }
-
-        // alpha = 0 freezes average, above 1 is unstable
-        if !(self.ewma.alpha > 0.0 && self.ewma.alpha <= 1.0) {
-            return Err(SlugError::config("ewma alpha must be in (0, 1]"));
         }
 
         // Negative flags improvements, NaN never flags
@@ -192,7 +165,7 @@ const EXAMPLE_CONFIG: &str = "\
 # Slug configuration
 
 # Which checks to run, and how to combine their verdicts.
-enabled = [\"zscore\", \"ewma\", \"prediction-bound\"]
+enabled = [\"zscore\", \"prediction-bound\"]
 # any = flag if ANY of enabled checks flag
 # all = flag only if ALL checks flag
 policy = \"all\"
@@ -204,13 +177,6 @@ min_samples = 10
 # flag when value is this many standard deviations above the mean
 threshold = 3.0
 # how many recent points to evaluate against
-window = 100
-
-[ewma]
-# smoothing factor, higher = more emphasis on recent values
-alpha = 0.2
-# control-limit width in standard deviations (L); lower = more sensitive
-limit = 3.0
 window = 100
 
 [prediction-bound]

@@ -9,14 +9,14 @@ use crate::cli;
 use crate::config::{Config, Policy};
 use crate::errors::SlugError;
 use crate::parser::{self, Lib, PerfData, Version};
-use crate::statistics::{combine, prediction_bound_run, evaluate_prediction_bound, evaluate_ewma, evaluate_zscore, run_checks, CheckReport, CheckVerdict};
+use crate::statistics::{combine, prediction_bound_run, evaluate_prediction_bound, evaluate_zscore, run_checks, CheckReport, CheckVerdict};
 use crate::units;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Normal};
 use std::collections::HashMap;
 
-const ALL_CHECKS: [&str; 3] = ["zscore", "ewma", "prediction-bound"];
+const ALL_CHECKS: [&str; 2] = ["zscore", "prediction-bound"];
 
 // Checks if two floats are "close enough" to being equal
 fn close(actual: f64, expected: f64) -> bool {
@@ -317,18 +317,6 @@ fn prediction_bound_controls_sensitivity() {
 }
 
 #[test]
-fn ewma_controls_sensitivity() {
-    // Lower limit tightens check flagged at L=2, tolerated at L=3
-    let mut config = config_with(&["ewma"]);
-
-    config.ewma.limit = 2.0; // limit 101.33, level above it
-    assert!(gate(&reference_history(110.0), &config));
-
-    config.ewma.limit = 3.0; // limit 102.0, level below it
-    assert!(!gate(&reference_history(110.0), &config));
-}
-
-#[test]
 fn zscore_controls_sensitivity() {
     // Lowering threshold tightens check flagged at 1.5, tolerated at 4.0
     let mut config = config_with(&["zscore"]);
@@ -373,16 +361,6 @@ fn prediction_bound_matches_pseudo_oracle() {
 
     let report = judged(evaluate_prediction_bound(&reference_history(103.844), &Config::default()));
     assert!(!report.flagged); // just under bound
-}
-
-#[test]
-fn ewma_level_matches_pseudo_oracle() {
-    // smoothed averages 99.8286755840 -> 101.8629404672
-    // limit = 100 + 3 * 2 * sqrt(0.2 / 1.8) = 102.0
-    let report = judged(evaluate_ewma(&reference_history(110.0), &Config::default()));
-    assert!(close(report.value, 101.8629404672));
-    assert!(close(report.threshold, 102.0));
-    assert!(!report.flagged); // 101.86 stays under the 102.0 limit
 }
 
 #[test]
@@ -455,15 +433,6 @@ fn prediction_bound_false_alarm_rate_matches_level() {
 }
 
 #[test]
-fn ewma_false_alarms_are_rare() {
-    // A 3-sigma control limit should be crossed by well under 1% of healthy points
-    let (flagged, judged) = flags_on_stream(&healthy_stream(), &config_with(&["ewma"]));
-    let rate = flagged as f64 / judged as f64;
-    println!("ewma L=3.0 false alarm rate: {:.4}", rate);
-    assert!(rate < 0.01, "rate {} not under 1%", rate);
-}
-
-#[test]
 fn zscore_false_alarms_are_rare() {
     // Three standard deviations should be crossed by under 1% of healthy points
     let (flagged, judged) = flags_on_stream(&healthy_stream(), &config_with(&["zscore"]));
@@ -479,27 +448,24 @@ fn step_baseline() -> Vec<f64> {
 
 #[test]
 fn mean_shift_size_determines_which_checks_flag() {
-    // Prediction-bound is the most sensitive, ewma needs a much bigger step
+    // Prediction-bound is the more sensitive of the two point checks
     let flags = |step_pct: f64, enabled: &[&str]| {
         let mut values = step_baseline();
         values.push(100.0 * (1.0 + step_pct / 100.0));
         gate(&series(&values), &config_with(enabled))
     };
 
-    // +6% (two standard deviations): prediction-bound flags, ewma does not
+    // +6% (two standard deviations): prediction-bound flags, z-score does not
     assert!(flags(6.0, &["prediction-bound"]));
-    assert!(!flags(6.0, &["ewma"]));
+    assert!(!flags(6.0, &["zscore"]));
 
-    // +10%: prediction-bound still flags, ewma still silent
+    // +10%: z-score joins in
     assert!(flags(10.0, &["prediction-bound"]));
-    assert!(!flags(10.0, &["ewma"]));
-
-    // +25%: now enough for ewma
-    assert!(flags(25.0, &["ewma"]));
+    assert!(flags(10.0, &["zscore"]));
 
     // +50%: large enough for both = trip policy all
     assert!(flags(50.0, &["prediction-bound"]));
-    assert!(flags(50.0, &["ewma"]));
+    assert!(flags(50.0, &["zscore"]));
     assert!({
         let mut values = step_baseline();
         values.push(150.0);
@@ -508,9 +474,9 @@ fn mean_shift_size_determines_which_checks_flag() {
 }
 
 #[test]
-fn gradual_drift_caught_by_both_checks() {
+fn gradual_drift_caught_by_prediction_bound_not_zscore() {
     // Drift of +1% per commit
-    // ewma - smoothed average accumulates the drift
+    // z-score - flags early then its baseline inflates
     // prediction-bound - keeps flagging
     let mut values = step_baseline();
     for k in 1..=60 {
@@ -518,10 +484,10 @@ fn gradual_drift_caught_by_both_checks() {
     }
 
     let (prediction_bound, _) = flags_on_stream(&values, &config_with(&["prediction-bound"]));
-    let (ewma, _) = flags_on_stream(&values, &config_with(&["ewma"]));
-    println!("drift flags: prediction_bound={} ewma={}", prediction_bound, ewma);
+    let (zscore, _) = flags_on_stream(&values, &config_with(&["zscore"]));
+    println!("drift flags: prediction_bound={} zscore={}", prediction_bound, zscore);
 
-    assert!(ewma > 10, "ewma should catch sustained drift, flagged {}", ewma);
+    assert!(zscore < 15, "zscore flagged {} times", zscore);
     assert!(prediction_bound > 40, "prediction_bound flagged only {} times", prediction_bound);
 }
 
@@ -536,7 +502,7 @@ fn improvement_never_flags() {
 #[test]
 fn detection_after_mean_shift_differs_per_check() {
     // Thirty points at +10% per level
-    // ewma - flags while smoothed average climbs across the shift
+    // z-score - flags on arrival then goes silent
     // prediction-bound - keeps flagging while window remembers healthy level
     let mut values = step_baseline();
     for i in 0..30 {
@@ -545,19 +511,19 @@ fn detection_after_mean_shift_differs_per_check() {
 
     // The baseline never flags, so every count comes from after the shift
     let (prediction_bound, _) = flags_on_stream(&values, &config_with(&["prediction-bound"]));
-    let (ewma, _) = flags_on_stream(&values, &config_with(&["ewma"]));
-    println!("after +10% shift: prediction_bound={} ewma={}", prediction_bound, ewma);
+    let (zscore, _) = flags_on_stream(&values, &config_with(&["zscore"]));
+    println!("after +10% shift: prediction_bound={} zscore={}", prediction_bound, zscore);
 
-    assert!(ewma > 0, "ewma must flag as the smoothed level crosses the shift");
-    assert!(prediction_bound > 10, "prediction_bound must keep flagging after the shift");
+    assert!(zscore >= 1, "z-score must flag the arrival");
+    assert!(prediction_bound > zscore, "prediction_bound must keep flagging after the z-score silences");
 }
 
 // Statistical check selection and verdict combination
 
 #[test]
 fn policy_decides() {
-    // 102.5: ewma passes, prediction-bound flags, policy decides end result
-    let mut config = config_with(&["ewma", "prediction-bound"]);
+    // 102.5: zscore passes, prediction-bound flags, policy decides end result
+    let mut config = config_with(&["zscore", "prediction-bound"]);
     config.policy = Policy::Any;
     assert!(gate(&history_with(102.5), &config));
 
@@ -646,8 +612,8 @@ fn partial_config_defaults() {
 
     assert_eq!(config.prediction_bound.level, 0.99);
     assert_eq!(config.prediction_bound.window, 100); // untouched default
-    assert_eq!(config.ewma.alpha, 0.2);
-    assert!(config.enabled.iter().any(|name| name == "ewma"));
+    assert_eq!(config.zscore.threshold, 3.0);
+    assert!(config.enabled.iter().any(|name| name == "zscore"));
 }
 
 #[test]

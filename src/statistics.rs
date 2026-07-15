@@ -66,7 +66,6 @@ fn registry(config: &Config) -> Vec<StatCheck> {
 
     add_stat_checks!(checks, config, {
         "zscore" => (zscore, evaluate_zscore, "mean"),
-        "ewma" => (ewma, evaluate_ewma, "mean"),
         "prediction-bound" => (prediction_bound, evaluate_prediction_bound, "mean"),
     });
 
@@ -263,61 +262,5 @@ pub fn evaluate_prediction_bound(history: &[PerfData], config: &Config) -> Resul
     } else {
         let text = format!("{} within {:.0}% bound {}", current, level_pct, bound);
         Ok(CheckVerdict::passed("prediction-bound", s.current, upper_bound, text))
-    }
-}
-
-// Exponential weighted moving average calculator
-pub fn ewma_calc(values: &[PerfData], alpha: f64) -> Vec<f64> {
-    if values.is_empty() {
-        return Vec::new();
-    }
-
-    const METRIC: &str = "mean";
-
-    let mut averages = Vec::new();
-
-    let mut previous_average = values[0].map[METRIC];
-
-    averages.push(previous_average);
-
-    for i in 1..values.len() {
-        let current_average = alpha * values[i].map[METRIC] + (1.0 - alpha) * previous_average;
-        averages.push(current_average);
-        previous_average = current_average;
-    }
-
-    averages
-}
-
-// Exponential weighted moving average control chart
-pub fn evaluate_ewma(history: &[PerfData], config: &Config) -> Result<CheckVerdict, SlugError> {
-    const METRIC: &str = "mean";
-
-    let Some(s) = sample(history, METRIC) else {
-        return Ok(CheckVerdict::Skipped);
-    };
-
-    let alpha = config.ewma.alpha;
-
-    // Smoothed level of the series, newest measurement folded in
-    let level = *ewma_calc(history, alpha).last().unwrap();
-
-    // At steady state the EWMA statistic has standard deviation
-    // sd * sqrt(alpha / (2 - alpha)), so an L-sigma upper control limit is
-    // mean + L * sd * sqrt(alpha / (2 - alpha)). One-sided: only slowdowns flag,
-    // and a sustained shift accumulates in the smoothed level until it crosses.
-    let ewma_sigma = s.std_dev * (alpha / (2.0 - alpha)).sqrt();
-    let upper_limit = s.mean + config.ewma.limit * ewma_sigma;
-
-    let level_fmt = units::format_ns(level);
-    let limit_fmt = units::format_ns(upper_limit);
-
-    if level > upper_limit {
-        let above_pct = (level / s.mean - 1.0) * 100.0;
-        let text = format!("smoothed {}, {:+.1}% above baseline, limit {} (L={:.1})", level_fmt, above_pct, limit_fmt, config.ewma.limit);
-        Ok(CheckVerdict::flagged("ewma", level, upper_limit, text))
-    } else {
-        let text = format!("smoothed {} within limit {} (L={:.1})", level_fmt, limit_fmt, config.ewma.limit);
-        Ok(CheckVerdict::passed("ewma", level, upper_limit, text))
     }
 }
