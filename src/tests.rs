@@ -9,14 +9,14 @@ use crate::cli;
 use crate::config::{Config, Policy};
 use crate::errors::SlugError;
 use crate::parser::{self, Lib, PerfData, Version};
-use crate::statistics::{combine, prediction_bound_run, evaluate_prediction_bound, evaluate_ewma, run_checks, CheckReport, CheckVerdict};
+use crate::statistics::{combine, prediction_bound_run, evaluate_prediction_bound, evaluate_ewma, evaluate_zscore, run_checks, CheckReport, CheckVerdict};
 use crate::units;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Normal};
 use std::collections::HashMap;
 
-const ALL_CHECKS: [&str; 2] = ["ewma", "prediction-bound"];
+const ALL_CHECKS: [&str; 3] = ["zscore", "ewma", "prediction-bound"];
 
 // Checks if two floats are "close enough" to being equal
 fn close(actual: f64, expected: f64) -> bool {
@@ -329,6 +329,18 @@ fn ewma_controls_sensitivity() {
 }
 
 #[test]
+fn zscore_controls_sensitivity() {
+    // Lowering threshold tightens check flagged at 1.5, tolerated at 4.0
+    let mut config = config_with(&["zscore"]);
+
+    config.zscore.threshold = 1.5;
+    assert!(gate(&history_with(103.0), &config));
+
+    config.zscore.threshold = 4.0;
+    assert!(!gate(&history_with(103.0), &config));
+}
+
+#[test]
 fn prediction_bound_increase_from_flat_baseline() {
     // With zero spread t-interval collapses to the mean
     let config = config_with(&["prediction-bound"]);
@@ -371,6 +383,14 @@ fn ewma_level_matches_pseudo_oracle() {
     assert!(close(report.value, 101.8629404672));
     assert!(close(report.threshold, 102.0));
     assert!(!report.flagged); // 101.86 stays under the 102.0 limit
+}
+
+#[test]
+fn zscore_matches_pseudo_oracle() {
+    // (110 - 100) / 2 = 5.0
+    let report = judged(evaluate_zscore(&reference_history(110.0), &Config::default()));
+    assert!(close(report.value, 5.0));
+    assert!(report.flagged); // 5.0 is above default threshold 3.0
 }
 
 #[test]
@@ -440,6 +460,15 @@ fn ewma_false_alarms_are_rare() {
     let (flagged, judged) = flags_on_stream(&healthy_stream(), &config_with(&["ewma"]));
     let rate = flagged as f64 / judged as f64;
     println!("ewma L=3.0 false alarm rate: {:.4}", rate);
+    assert!(rate < 0.01, "rate {} not under 1%", rate);
+}
+
+#[test]
+fn zscore_false_alarms_are_rare() {
+    // Three standard deviations should be crossed by under 1% of healthy points
+    let (flagged, judged) = flags_on_stream(&healthy_stream(), &config_with(&["zscore"]));
+    let rate = flagged as f64 / judged as f64;
+    println!("zscore 3.0 false alarm rate: {:.4}", rate);
     assert!(rate < 0.01, "rate {} not under 1%", rate);
 }
 
