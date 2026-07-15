@@ -6,7 +6,6 @@ use getopts::Options;
 use std::env;
 use crate::errors::SlugError;
 use crate::dbm_git::Store;
-use crate::config::Config;
 use crate::terms;
 
 pub struct CliOptions {
@@ -16,9 +15,6 @@ pub struct CliOptions {
     pub write: bool,
     pub subcommand: Option<String>,
     pub target: Option<String>,
-    pub ewma_alpha: f64,
-    pub ewma_limit: f64,
-    pub prediction_level: f64,
 }
 
 pub enum PerfDataReader {
@@ -35,7 +31,7 @@ fn print_usage(program: &str, opts: Options) {
     terms::raw(&opts.usage(&brief));
 }
 
-pub fn parse_args(config: &Config) -> Result<CliOptions, SlugError> {
+pub fn parse_args() -> Result<CliOptions, SlugError> {
     let args: Vec<String> = env::args().collect();
     let program = args[0].clone();
 
@@ -83,10 +79,6 @@ pub fn parse_args(config: &Config) -> Result<CliOptions, SlugError> {
         _ => Store::Local,
     };
 
-    let ewma_alpha = config.ewma.alpha;
-    let ewma_limit = config.ewma.limit;
-    let prediction_level = config.prediction_bound.level;
-
     if library_type.is_none() && subcommand.is_none() {
         print_usage(&program, opts);
         return Err(SlugError::cli("Missing mandatory option -t"));
@@ -99,9 +91,6 @@ pub fn parse_args(config: &Config) -> Result<CliOptions, SlugError> {
         write,
         subcommand,
         target,
-        ewma_alpha,
-        ewma_limit,
-        prediction_level,
     })
 }
 

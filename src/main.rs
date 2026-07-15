@@ -46,7 +46,7 @@ fn main() -> ExitCode {
 // Err = Slug itself failed
 fn run() -> Result<Option<String>, SlugError> {
     let config = config::load_or_default()?;
-    let options = cli::parse_args(&config)?;
+    let options = cli::parse_args()?;
 
     if options.subcommand.is_some() {
         return run_subcommand(&options).map(|()| None);
@@ -94,12 +94,12 @@ fn run() -> Result<Option<String>, SlugError> {
         let mut window = dbm_git::get_latest_n(&slug_git, &name, config.max_window())?;
         window.push(entry);
 
-        let mut verdicts = statistics::run_checks(&window, &options, &config)?;
+        let mut verdicts = statistics::run_checks(&window, &config)?;
         let mut flagged = statistics::combine(&verdicts, config.policy);
 
         // Run rule fires regardless of policy
         if !flagged {
-            if let Some(reason) = statistics::prediction_bound_run(&window, &options, &config)? {
+            if let Some(reason) = statistics::prediction_bound_run(&window, &config)? {
                 flagged = true;
                 let run = config.prediction_bound.run as f64;
                 verdicts.push(statistics::CheckVerdict::flagged("run rule", run, run, reason));

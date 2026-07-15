@@ -5,9 +5,8 @@
 //  - Statistical checks (statistics.rs)
 //  - slug.toml parsing (config.rs)
 
-use crate::cli::{self, CliOptions};
+use crate::cli;
 use crate::config::{Config, Policy};
-use crate::dbm_git::Store;
 use crate::errors::SlugError;
 use crate::parser::{self, Lib, PerfData, Version};
 use crate::statistics::{combine, prediction_bound_run, evaluate_prediction_bound, evaluate_ewma, run_checks, CheckReport, CheckVerdict};
@@ -69,22 +68,6 @@ fn history_with(newest: f64) -> Vec<PerfData> {
     history
 }
 
-// Slug default run options
-fn options() -> CliOptions {
-    let config = Config::default();
-    CliOptions {
-        file: None,
-        library_type: None,
-        storage: Store::Local,
-        write: false,
-        subcommand: None,
-        target: None,
-        ewma_alpha: config.ewma.alpha,
-        ewma_limit: config.ewma.limit,
-        prediction_level: config.prediction_bound.level,
-    }
-}
-
 // Slug default config with only the given checks enabled
 fn config_with(enabled: &[&str]) -> Config {
     let mut config = Config::default();
@@ -96,8 +79,8 @@ fn config_with(enabled: &[&str]) -> Config {
 }
 
 // The pipeline verdict for one benchmark: enabled checks and policy
-fn gate(history: &[PerfData], opts: &CliOptions, config: &Config) -> bool {
-    let verdicts = run_checks(history, opts, config).unwrap();
+fn gate(history: &[PerfData], config: &Config) -> bool {
+    let verdicts = run_checks(history, config).unwrap();
     combine(&verdicts, config.policy)
 }
 
@@ -297,7 +280,7 @@ fn unknown_library_is_rejected() {
 #[test]
 fn every_check_passes_stable_history() {
     for check in ALL_CHECKS {
-        assert!(!gate(&history_with(101.0), &options(), &config_with(&[check])),
+        assert!(!gate(&history_with(101.0), &config_with(&[check])),
             "{} flagged a stable history", check);
     }
 }
@@ -305,7 +288,7 @@ fn every_check_passes_stable_history() {
 #[test]
 fn every_check_flags_spike() {
     for check in ALL_CHECKS {
-        assert!(gate(&history_with(300.0), &options(), &config_with(&[check])),
+        assert!(gate(&history_with(300.0), &config_with(&[check])),
             "{} missed a 3x spike", check);
     }
 }
@@ -316,7 +299,7 @@ fn every_check_skips_short_history() {
     for check in ALL_CHECKS {
         let mut history = series(&[100.0; 5]);
         history.push(point("mean", 300.0));
-        assert!(!gate(&history, &options(), &config_with(&[check])),
+        assert!(!gate(&history, &config_with(&[check])),
             "{} judged below the sample floor", check);
     }
 }
@@ -324,29 +307,25 @@ fn every_check_skips_short_history() {
 #[test]
 fn prediction_bound_controls_sensitivity() {
     // Higher prediction-bound level widens interval flagged at 90%, tolerated at 99.9%
-    let config = config_with(&["prediction-bound"]);
+    let mut config = config_with(&["prediction-bound"]);
 
-    let mut strict = options();
-    strict.prediction_level = 0.90;
-    assert!(gate(&history_with(103.0), &strict, &config));
+    config.prediction_bound.level = 0.90;
+    assert!(gate(&history_with(103.0), &config));
 
-    let mut lenient = options();
-    lenient.prediction_level = 0.999;
-    assert!(!gate(&history_with(103.0), &lenient, &config));
+    config.prediction_bound.level = 0.999;
+    assert!(!gate(&history_with(103.0), &config));
 }
 
 #[test]
 fn ewma_controls_sensitivity() {
     // Lower limit tightens check flagged at L=2, tolerated at L=3
-    let config = config_with(&["ewma"]);
+    let mut config = config_with(&["ewma"]);
 
-    let mut strict = options();
-    strict.ewma_limit = 2.0; // limit 101.33, level above it
-    assert!(gate(&reference_history(110.0), &strict, &config));
+    config.ewma.limit = 2.0; // limit 101.33, level above it
+    assert!(gate(&reference_history(110.0), &config));
 
-    let mut lenient = options();
-    lenient.ewma_limit = 3.0; // limit 102.0, level below it
-    assert!(!gate(&reference_history(110.0), &lenient, &config));
+    config.ewma.limit = 3.0; // limit 102.0, level below it
+    assert!(!gate(&reference_history(110.0), &config));
 }
 
 #[test]
@@ -357,10 +336,10 @@ fn prediction_bound_increase_from_flat_baseline() {
     // Zero spread means any increase flags
     let mut history = series(&[100.0; 15]);
     history.push(point("mean", 100.5));
-    assert!(gate(&history, &options(), &config));
+    assert!(gate(&history, &config));
 
     // Staying level is fine
-    assert!(!gate(&series(&[100.0; 16]), &options(), &config));
+    assert!(!gate(&series(&[100.0; 16]), &config));
 }
 
 
@@ -376,11 +355,11 @@ fn reference_history(newest: f64) -> Vec<PerfData> {
 fn prediction_bound_matches_pseudo_oracle() {
     // upper bound = 100 + t(0.95, 9) * 2 * sqrt(1 + 1/10) = 103.8451701269
     // where t(0.95, 9) = 1.8331129327 (scipy.stats.t.ppf(0.95, 9))
-    let report = judged(evaluate_prediction_bound(&reference_history(110.0), &options()));
+    let report = judged(evaluate_prediction_bound(&reference_history(110.0), &Config::default()));
     assert!(close(report.threshold, 103.8451701269));
     assert!(report.flagged); // 110 is above bound
 
-    let report = judged(evaluate_prediction_bound(&reference_history(103.844), &options()));
+    let report = judged(evaluate_prediction_bound(&reference_history(103.844), &Config::default()));
     assert!(!report.flagged); // just under bound
 }
 
@@ -388,7 +367,7 @@ fn prediction_bound_matches_pseudo_oracle() {
 fn ewma_level_matches_pseudo_oracle() {
     // smoothed averages 99.8286755840 -> 101.8629404672
     // limit = 100 + 3 * 2 * sqrt(0.2 / 1.8) = 102.0
-    let report = judged(evaluate_ewma(&reference_history(110.0), &options()));
+    let report = judged(evaluate_ewma(&reference_history(110.0), &Config::default()));
     assert!(close(report.value, 101.8629404672));
     assert!(close(report.threshold, 102.0));
     assert!(!report.flagged); // 101.86 stays under the 102.0 limit
@@ -408,22 +387,22 @@ fn verdicts_are_scale_invariant() {
             history
         };
 
-        assert!(gate(&scaled(300.0), &options(), &config));
-        assert!(!gate(&scaled(101.0), &options(), &config));
+        assert!(gate(&scaled(300.0), &config));
+        assert!(!gate(&scaled(101.0), &config));
     }
 }
 
 // Statistical properties of checks on synthetic streams
 
 // Feed points one at a time, while counting flags
-fn flags_on_stream(values: &[f64], config: &Config, opts: &CliOptions) -> (usize, usize) {
+fn flags_on_stream(values: &[f64], config: &Config) -> (usize, usize) {
     let history = series(values);
 
     let mut flagged = 0;
     let mut judged = 0;
     for i in 9..history.len() {
         judged += 1;
-        if gate(&history[..=i], opts, config) {
+        if gate(&history[..=i], config) {
             flagged += 1;
         }
     }
@@ -442,14 +421,14 @@ fn prediction_bound_false_alarm_rate_matches_level() {
     // Prediction-bound false alarm rate is 5% at 0.95
     let stream = healthy_stream();
 
-    let (flagged, judged) = flags_on_stream(&stream, &config_with(&["prediction-bound"]), &options());
+    let (flagged, judged) = flags_on_stream(&stream, &config_with(&["prediction-bound"]));
     let rate = flagged as f64 / judged as f64;
     println!("prediction_bound 0.95 false alarm rate: {:.4}", rate);
     assert!(rate > 0.035 && rate < 0.065, "rate {} outside [3.5%, 6.5%]", rate);
 
-    let mut lenient = options();
-    lenient.prediction_level = 0.90;
-    let (flagged, judged) = flags_on_stream(&stream, &config_with(&["prediction-bound"]), &lenient);
+    let mut lenient = config_with(&["prediction-bound"]);
+    lenient.prediction_bound.level = 0.90;
+    let (flagged, judged) = flags_on_stream(&stream, &lenient);
     let rate = flagged as f64 / judged as f64;
     println!("prediction_bound 0.90 false alarm rate: {:.4}", rate);
     assert!(rate > 0.08 && rate < 0.12, "rate {} outside [8%, 12%]", rate);
@@ -458,7 +437,7 @@ fn prediction_bound_false_alarm_rate_matches_level() {
 #[test]
 fn ewma_false_alarms_are_rare() {
     // A 3-sigma control limit should be crossed by well under 1% of healthy points
-    let (flagged, judged) = flags_on_stream(&healthy_stream(), &config_with(&["ewma"]), &options());
+    let (flagged, judged) = flags_on_stream(&healthy_stream(), &config_with(&["ewma"]));
     let rate = flagged as f64 / judged as f64;
     println!("ewma L=3.0 false alarm rate: {:.4}", rate);
     assert!(rate < 0.01, "rate {} not under 1%", rate);
@@ -475,7 +454,7 @@ fn mean_shift_size_determines_which_checks_flag() {
     let flags = |step_pct: f64, enabled: &[&str]| {
         let mut values = step_baseline();
         values.push(100.0 * (1.0 + step_pct / 100.0));
-        gate(&series(&values), &options(), &config_with(enabled))
+        gate(&series(&values), &config_with(enabled))
     };
 
     // +6% (two standard deviations): prediction-bound flags, ewma does not
@@ -495,7 +474,7 @@ fn mean_shift_size_determines_which_checks_flag() {
     assert!({
         let mut values = step_baseline();
         values.push(150.0);
-        gate(&series(&values), &options(), &config_with(&ALL_CHECKS))
+        gate(&series(&values), &config_with(&ALL_CHECKS))
     });
 }
 
@@ -509,8 +488,8 @@ fn gradual_drift_caught_by_both_checks() {
         values.push(100.0 + k as f64 + if k % 2 == 0 { 3.0 } else { -3.0 });
     }
 
-    let (prediction_bound, _) = flags_on_stream(&values, &config_with(&["prediction-bound"]), &options());
-    let (ewma, _) = flags_on_stream(&values, &config_with(&["ewma"]), &options());
+    let (prediction_bound, _) = flags_on_stream(&values, &config_with(&["prediction-bound"]));
+    let (ewma, _) = flags_on_stream(&values, &config_with(&["ewma"]));
     println!("drift flags: prediction_bound={} ewma={}", prediction_bound, ewma);
 
     assert!(ewma > 10, "ewma should catch sustained drift, flagged {}", ewma);
@@ -522,7 +501,7 @@ fn improvement_never_flags() {
     // Running faster is not regression
     let mut config = config_with(&ALL_CHECKS);
     config.policy = Policy::Any;
-    assert!(!gate(&history_with(30.0), &options(), &config));
+    assert!(!gate(&history_with(30.0), &config));
 }
 
 #[test]
@@ -536,8 +515,8 @@ fn detection_after_mean_shift_differs_per_check() {
     }
 
     // The baseline never flags, so every count comes from after the shift
-    let (prediction_bound, _) = flags_on_stream(&values, &config_with(&["prediction-bound"]), &options());
-    let (ewma, _) = flags_on_stream(&values, &config_with(&["ewma"]), &options());
+    let (prediction_bound, _) = flags_on_stream(&values, &config_with(&["prediction-bound"]));
+    let (ewma, _) = flags_on_stream(&values, &config_with(&["ewma"]));
     println!("after +10% shift: prediction_bound={} ewma={}", prediction_bound, ewma);
 
     assert!(ewma > 0, "ewma must flag as the smoothed level crosses the shift");
@@ -551,10 +530,10 @@ fn policy_decides() {
     // 102.5: ewma passes, prediction-bound flags, policy decides end result
     let mut config = config_with(&["ewma", "prediction-bound"]);
     config.policy = Policy::Any;
-    assert!(gate(&history_with(102.5), &options(), &config));
+    assert!(gate(&history_with(102.5), &config));
 
     config.policy = Policy::All;
-    assert!(!gate(&history_with(102.5), &options(), &config));
+    assert!(!gate(&history_with(102.5), &config));
 }
 
 #[test]
@@ -569,10 +548,10 @@ fn config_window_limits_history() {
 
     let mut config = config_with(&["prediction-bound"]);
     config.prediction_bound.window = 11;
-    assert!(gate(&history, &options(), &config));
+    assert!(gate(&history, &config));
 
     config.prediction_bound.window = 100;
-    assert!(!gate(&history, &options(), &config));
+    assert!(!gate(&history, &config));
 }
 
 // Run rule
@@ -589,7 +568,7 @@ fn run_rule_fires_after_n_consecutive_flags() {
     let history = streak(2, 120.0);
     let config = config_with(&["prediction-bound"]);
 
-    let reason = prediction_bound_run(&history, &options(), &config).unwrap();
+    let reason = prediction_bound_run(&history, &config).unwrap();
     assert_eq!(reason.unwrap(), "prediction-bound check flagged the last 2 commits in a row");
 }
 
@@ -599,7 +578,7 @@ fn run_rule_ignores_isolated_flag() {
     let history = streak(1, 120.0);
     let config = config_with(&["prediction-bound"]);
 
-    let reason = prediction_bound_run(&history, &options(), &config).unwrap();
+    let reason = prediction_bound_run(&history, &config).unwrap();
     assert!(reason.is_none());
 }
 
@@ -610,11 +589,11 @@ fn run_rule_disarmed_by_config() {
 
     let mut config = config_with(&["prediction-bound"]);
     config.prediction_bound.run = 0;
-    let reason = prediction_bound_run(&history, &options(), &config).unwrap();
+    let reason = prediction_bound_run(&history, &config).unwrap();
     assert!(reason.is_none());
 
     let config = config_with(&[]);
-    let reason = prediction_bound_run(&history, &options(), &config).unwrap();
+    let reason = prediction_bound_run(&history, &config).unwrap();
     assert!(reason.is_none());
 }
 
@@ -626,7 +605,7 @@ fn run_rule_streak_needs_warmed_up_prefixes() {
     let history = series(&values);
     let config = config_with(&["prediction-bound"]);
 
-    let reason = prediction_bound_run(&history, &options(), &config).unwrap();
+    let reason = prediction_bound_run(&history, &config).unwrap();
     assert!(reason.is_none());
 }
 

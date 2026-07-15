@@ -1,6 +1,5 @@
 use crate::parser::PerfData;
 use crate::errors::SlugError;
-use crate::cli::CliOptions;
 use crate::units;
 use crate::config::{Config, Policy};
 use statrs::distribution::{ContinuousCDF, StudentsT};
@@ -37,7 +36,7 @@ impl CheckVerdict {
 }
 
 // Type signature for a function that judges newest measurement against history
-type StatEvaluator = fn(&[PerfData], &CliOptions) -> Result<CheckVerdict, SlugError>;
+type StatEvaluator = fn(&[PerfData], &Config) -> Result<CheckVerdict, SlugError>;
 
 struct StatCheck {
     pub name: &'static str,
@@ -84,7 +83,7 @@ fn tail(history: &[PerfData], n: usize) -> &[PerfData] {
 }
 
 // Run checks selected in config, each over its own window
-pub fn run_checks(history: &[PerfData], options: &CliOptions, config: &Config) -> Result<Vec<CheckVerdict>, SlugError> {
+pub fn run_checks(history: &[PerfData], config: &Config) -> Result<Vec<CheckVerdict>, SlugError> {
     if history.is_empty() {
         return Ok(Vec::new());
     }
@@ -109,7 +108,7 @@ pub fn run_checks(history: &[PerfData], options: &CliOptions, config: &Config) -
         if slice.len() < config.min_samples {
             verdicts.push(CheckVerdict::TooFewSamples { check: check.name, have: slice.len(), need: config.min_samples });
         } else {
-            verdicts.push((check.evaluator)(slice, options)?);
+            verdicts.push((check.evaluator)(slice, config)?);
         }
     }
 
@@ -135,7 +134,7 @@ pub fn combine(verdicts: &[CheckVerdict], policy: Policy) -> bool {
 }
 
 // Did the prediction-bound check flag last run commits in row, nothing stored
-pub fn prediction_bound_run(history: &[PerfData], options: &CliOptions, config: &Config) -> Result<Option<String>, SlugError> {
+pub fn prediction_bound_run(history: &[PerfData], config: &Config) -> Result<Option<String>, SlugError> {
     let k = config.prediction_bound.run;
 
     if k < 2 || !config.check_is_on("prediction-bound") {
@@ -148,7 +147,7 @@ pub fn prediction_bound_run(history: &[PerfData], options: &CliOptions, config: 
     // Walk down from newest commit
     let mut end = history.len();
     for _ in 0..k {
-        if !prediction_bound_flagged(&history[..end], options, config)? {
+        if !prediction_bound_flagged(&history[..end], config)? {
             return Ok(None);
         }
         end -= 1;
@@ -157,7 +156,7 @@ pub fn prediction_bound_run(history: &[PerfData], options: &CliOptions, config: 
     Ok(Some(format!("prediction-bound check flagged the last {} commits in a row", k)))
 }
 
-fn prediction_bound_flagged(history: &[PerfData], options: &CliOptions, config: &Config) -> Result<bool, SlugError> {
+fn prediction_bound_flagged(history: &[PerfData], config: &Config) -> Result<bool, SlugError> {
     let slice = tail(history, config.prediction_bound.window);
 
     if slice.len() < config.min_samples {
@@ -167,7 +166,7 @@ fn prediction_bound_flagged(history: &[PerfData], options: &CliOptions, config: 
         return Ok(false);
     }
 
-    match evaluate_prediction_bound(slice, options)? {
+    match evaluate_prediction_bound(slice, config)? {
         CheckVerdict::Judged(report) => Ok(report.flagged),
         _ => Ok(false),
     }
@@ -201,7 +200,7 @@ fn sample(history: &[PerfData], metric: &str) -> Option<Sample> {
     })
 }
 
-pub fn evaluate_prediction_bound(history: &[PerfData], options: &CliOptions) -> Result<CheckVerdict, SlugError> {
+pub fn evaluate_prediction_bound(history: &[PerfData], config: &Config) -> Result<CheckVerdict, SlugError> {
     const METRIC: &str = "mean";
 
     let Some(s) = sample(history, METRIC) else {
@@ -213,10 +212,10 @@ pub fn evaluate_prediction_bound(history: &[PerfData], options: &CliOptions) -> 
     // Student's t because mean and std-dev are just estimates from n points
     let t = StudentsT::new(0.0, 1.0, s.n - 1.0)
         .map_err(|e| SlugError::config(format!("prediction-bound check: {}", e)))?
-        .inverse_cdf(options.prediction_level);
+        .inverse_cdf(config.prediction_bound.level);
     let upper_bound = s.mean + t * s.std_dev * (1.0 + 1.0 / s.n).sqrt();
 
-    let level_pct = options.prediction_level * 100.0;
+    let level_pct = config.prediction_bound.level * 100.0;
     let bound = units::format_ns(upper_bound);
     let current = units::format_ns(s.current);
 
@@ -255,14 +254,14 @@ pub fn ewma_calc(values: &[PerfData], alpha: f64) -> Vec<f64> {
 }
 
 // Exponential weighted moving average control chart
-pub fn evaluate_ewma(history: &[PerfData], options: &CliOptions) -> Result<CheckVerdict, SlugError> {
+pub fn evaluate_ewma(history: &[PerfData], config: &Config) -> Result<CheckVerdict, SlugError> {
     const METRIC: &str = "mean";
 
     let Some(s) = sample(history, METRIC) else {
         return Ok(CheckVerdict::Skipped);
     };
 
-    let alpha = options.ewma_alpha;
+    let alpha = config.ewma.alpha;
 
     // Smoothed level of the series, newest measurement folded in
     let level = *ewma_calc(history, alpha).last().unwrap();
@@ -272,17 +271,17 @@ pub fn evaluate_ewma(history: &[PerfData], options: &CliOptions) -> Result<Check
     // mean + L * sd * sqrt(alpha / (2 - alpha)). One-sided: only slowdowns flag,
     // and a sustained shift accumulates in the smoothed level until it crosses.
     let ewma_sigma = s.std_dev * (alpha / (2.0 - alpha)).sqrt();
-    let upper_limit = s.mean + options.ewma_limit * ewma_sigma;
+    let upper_limit = s.mean + config.ewma.limit * ewma_sigma;
 
     let level_fmt = units::format_ns(level);
     let limit_fmt = units::format_ns(upper_limit);
 
     if level > upper_limit {
         let above_pct = (level / s.mean - 1.0) * 100.0;
-        let text = format!("smoothed {}, {:+.1}% above baseline, limit {} (L={:.1})", level_fmt, above_pct, limit_fmt, options.ewma_limit);
+        let text = format!("smoothed {}, {:+.1}% above baseline, limit {} (L={:.1})", level_fmt, above_pct, limit_fmt, config.ewma.limit);
         Ok(CheckVerdict::flagged("ewma", level, upper_limit, text))
     } else {
-        let text = format!("smoothed {} within limit {} (L={:.1})", level_fmt, limit_fmt, options.ewma_limit);
+        let text = format!("smoothed {} within limit {} (L={:.1})", level_fmt, limit_fmt, config.ewma.limit);
         Ok(CheckVerdict::passed("ewma", level, upper_limit, text))
     }
 }
