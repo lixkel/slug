@@ -23,19 +23,10 @@ pub fn format_export(exports: &[(String, String)]) -> String {
 
 
 pub fn get_data_entry_string<W: std::io::Write>(mut writer: Writer<W>, data: &PerfData, file_exists: bool) -> Result<(), SlugError> {
-    // Sort keys
-    let mut keys: Vec<&String> = data.map.keys().collect();
-    keys.sort_unstable();
-    
-    // TODO: make this a PerfData function
-    let mut values = keys
-        .iter()
-        .map(|&key| data.map.get(key).unwrap().to_string())
-        .collect::<Vec<String>>();
+    let (mut keys, mut values) = data.sorted_entries();
 
     // Add commit_hash to output
-    let commit_hash_str = "commit_hash".to_string();
-    keys.push(&commit_hash_str);
+    keys.push("commit_hash");
     values.push(data.commit_hash.clone());
 
     if !file_exists {

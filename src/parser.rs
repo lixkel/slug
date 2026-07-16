@@ -69,6 +69,15 @@ impl PerfData {
         self.map.insert(key.to_string(), units::normalize(value, unit)?);
         Ok(())
     }
+
+    // Metrics as (keys, values), key sorted so CSV columns stay in stable order
+    pub fn sorted_entries(&self) -> (Vec<&str>, Vec<String>) {
+        let mut entries: Vec<_> = self.map.iter().collect();
+    
+        entries.sort_unstable_by(|(k1, _), (k2, _)| k1.cmp(k2));
+    
+        entries.into_iter().map(|(k, v)| (k.as_str(), v.to_string())).unzip()
+    }
 }
 
 impl Version {
