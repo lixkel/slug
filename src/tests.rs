@@ -160,7 +160,7 @@ fn lib_splits_name_version() {
 // Parsers, end to end testing against real output
 
 #[test]
-fn pyperf_2_7_0() {
+fn pyperf_0_7_2() {
     let data = parse_fixture("pyperf@2.7.0", "pyperf.txt").unwrap();
 
     let fib = find_benchmark(&data, "fib");
@@ -185,7 +185,7 @@ fn pytest_7_3_0() {
 }
 
 #[test]
-fn go_testing_1_26_4() {
+fn go_testing_1_0_0() {
     let data = parse_fixture("go-testing@1.26.4", "go-testing.txt").unwrap();
 
     let fib = find_benchmark(&data, "BenchmarkFib");
@@ -196,7 +196,7 @@ fn go_testing_1_26_4() {
 }
 
 #[test]
-fn criterion_0_5_1() {
+fn criterion_0_1_2() {
     let data = parse_fixture("criterion@0.5.1", "criterion.txt").unwrap();
 
     let fib = find_benchmark(&data, "fib");
@@ -209,7 +209,7 @@ fn criterion_0_5_1() {
 }
 
 #[test]
-fn google_benchmark_1_8_3() {
+fn google_benchmark_1_1_0() {
     let data = parse_fixture("google-benchmark@1.8.3", "google-benchmark.txt").unwrap();
 
     let fib = find_benchmark(&data, "BM_Fib");
@@ -226,7 +226,7 @@ fn google_benchmark_1_8_3() {
 }
 
 #[test]
-fn jmh_1_37_0() {
+fn jmh_1_0_0() {
     let data = parse_fixture("jmh@1.37.0", "jmh.txt").unwrap();
 
     let fib = find_benchmark(&data, "MyBenchmark.fib");
@@ -238,7 +238,7 @@ fn jmh_1_37_0() {
 }
 
 #[test]
-fn benchmarkdotnet_0_14_0() {
+fn benchmarkdotnet_0_10_0() {
     let data = parse_fixture("benchmarkdotnet@0.14.0", "benchmarkdotnet.txt").unwrap();
 
     let fib = find_benchmark(&data, "FibBench");
@@ -260,7 +260,7 @@ fn bad_input_fails_loud() {
 
 #[test]
 fn newer_request_resolves_to_closest_lower_parser() {
-    // No parser for 2.9.9 => 2.7.0 parser must be selected
+    // No parser for 2.9.9 => 0.7.2 parser must be selected
     assert!(parse_fixture("pyperf@2.9.9", "pyperf.txt").is_ok());
 }
 
@@ -271,8 +271,9 @@ fn bare_name_resolves_to_newest_parser() {
 
 #[test]
 fn request_below_minimum_version_has_no_parser() {
-    // 2.6.0 predates only registered parser (2.7.0)
-    assert!(parse_fixture("pyperf@2.6.0", "pyperf.txt").is_err());
+    // 0.7.1 predates only registered parser (0.7.2), the release that added
+    // the name prefix the parser matches on
+    assert!(parse_fixture("pyperf@0.7.1", "pyperf.txt").is_err());
 }
 
 #[test]

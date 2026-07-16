@@ -2,17 +2,19 @@
 // -----------------
 // Function name:  <library>_<major>_<minor>_<patch>    This is a Rust
 //                 identifier, so hyphens become underscores, e.g.
-//                 google_benchmark_1_8_3). The version is *minimum* library
+//                 google_benchmark_1_1_0). The version is *minimum* library
 //                 version the parser supports, The parser registry in
 //                 parser.rs picks the closest parser whose version is <=
-//                 than the one requsted.
+//                 than the one requsted. Find it by tracing the format string
+//                 through the library's git history, not from the version the
+//                 parser was written against, the format is usually far older.
 //
-// Registry key /  "name@version"   (e.g. `-t google-benchmark@1.8.3`) The name
+// Registry key /  "name@version"   (e.g. `-t google-benchmark@1.1.0`) The name
 // CLI flag:       keeps the library's name spelling and may contain hyphens,
 //                 only the '@' separates name and version. Use the bare
-//                 library name when it is distinctive (pytest, pyperf,
-//                 criterion). Add language prefix only when the library's own
-//                 name is generic (Go's `testing` -> `go-testing`).
+//                 library name when it is distinctive (pyperf, criterion). Add
+//                 language prefix only when the library's own name is generic
+//                 (Go's `testing` -> `go-testing`).
 //
 // Which metrics to record
 // ------------------------
@@ -120,7 +122,7 @@ pub fn pytest_7_3_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
     parse_rows(s, &row_re, &metrics)
 }
 
-pub fn go_testing_1_26_4(s: &str) -> Result<Vec<PerfData>, SlugError> {
+pub fn go_testing_1_0_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
     // go testing prints one line per benchmark:
     //   BenchmarkFib-16   37124   32459 ns/op   0 B/op   0 allocs/op
     // Name has thread count suffix which we drop
@@ -131,7 +133,7 @@ pub fn go_testing_1_26_4(s: &str) -> Result<Vec<PerfData>, SlugError> {
     parse_rows(s, &regex, &[Metric::new("mean", "value", "unit")])
 }
 
-pub fn criterion_0_5_1(s: &str) -> Result<Vec<PerfData>, SlugError> {
+pub fn criterion_0_1_2(s: &str) -> Result<Vec<PerfData>, SlugError> {
     // criterion prints confidence interval per benchmark:
     //   fib                     time:   [22.624 µs 22.702 µs 22.775 µs]
     // The numbers are lower bound, point estimate, upper bound
@@ -146,7 +148,7 @@ pub fn criterion_0_5_1(s: &str) -> Result<Vec<PerfData>, SlugError> {
     ])
 }
 
-pub fn google_benchmark_1_8_3(s: &str) -> Result<Vec<PerfData>, SlugError> {
+pub fn google_benchmark_1_1_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
     // google-benchmark prints all the data on one line per benchmark:
     //  BM_Fib          12194 ns        12150 ns        55767
     // columns are name, Time, CPU, Iterations
@@ -160,9 +162,11 @@ pub fn google_benchmark_1_8_3(s: &str) -> Result<Vec<PerfData>, SlugError> {
     ])
 }
 
-pub fn pyperf_2_7_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
+pub fn pyperf_0_7_2(s: &str) -> Result<Vec<PerfData>, SlugError> {
     // pyperf scales unit per benchmark (line), so the unit must be read from each line
     // mean and stddev each carry their own unit
+    // 0.7.2 added the name prefix, the "Mean +- std dev" label came in 0.5,
+    // before that the same numbers were labelled "Average"
     let regex = Regex::new(
         r"(?P<name>\w+): Mean \+- std dev: (?P<mean>\d+(?:\.\d+)?) (?P<munit>\w+) \+- (?P<stddev>\d+(?:\.\d+)?) (?P<sunit>\w+)"
     )?;
@@ -173,7 +177,7 @@ pub fn pyperf_2_7_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
     ])
 }
 
-pub fn jmh_1_37_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
+pub fn jmh_1_0_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
     // JMH prints a summary table at the end, one line per benchmark:
     //   Benchmark         Mode  Cnt      Score      Error  Units
     //   MyBenchmark.fib   avgt   25  23516.718 ± 1096.241  ns/op
@@ -187,7 +191,7 @@ pub fn jmh_1_37_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
     ])
 }
 
-pub fn benchmarkdotnet_0_14_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
+pub fn benchmarkdotnet_0_10_0(s: &str) -> Result<Vec<PerfData>, SlugError> {
     // BenchmarkDotNet prints a markdown summary table, one row per benchmark:
     //   | Method    | Mean      | Error     | StdDev    |
     //   | FibBench  | 24.783 us | 0.1982 us | 0.2646 us |

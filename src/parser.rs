@@ -139,14 +139,17 @@ impl Lib {
 fn registry() -> HashMap<String, Vec<Parser>> {
     let mut parsers: HashMap<String, Vec<Parser>> = HashMap::new();
 
+    // Each version is the oldest release whose output the parser still matches,
+    // traced through the library's own git history, not the version it was
+    // tested against
     add_libs!(parsers, {
         "pytest" => [(pytest_7_3_0, "7.3.0")],
-        "pyperf" => [(pyperf_2_7_0, "2.7.0")],
-        "go-testing" => [(go_testing_1_26_4, "1.26.4")],
-        "criterion" => [(criterion_0_5_1, "0.5.1")],
-        "google-benchmark" => [(google_benchmark_1_8_3, "1.8.3")],
-        "jmh" => [(jmh_1_37_0, "1.37.0")],
-        "benchmarkdotnet" => [(benchmarkdotnet_0_14_0, "0.14.0")]
+        "pyperf" => [(pyperf_0_7_2, "0.7.2")],
+        "go-testing" => [(go_testing_1_0_0, "1.0.0")],
+        "criterion" => [(criterion_0_1_2, "0.1.2")],
+        "google-benchmark" => [(google_benchmark_1_1_0, "1.1.0")],
+        "jmh" => [(jmh_1_0_0, "1.0.0")],
+        "benchmarkdotnet" => [(benchmarkdotnet_0_10_0, "0.10.0")]
     });
 
     parsers
