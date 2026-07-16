@@ -33,8 +33,8 @@ fn parse_fixture(lib: &str, relative: &str) -> Result<Vec<PerfData>, SlugError> 
     let path = Some(fixture(relative));
     let lib = Lib::from_str(lib).expect("library string needs to be valid");
     let parser = parser::resolve(&lib)?;
-    let reader = cli::get_reader(&path)?;
-    parser::parse(reader, parser)
+    let input = cli::read_input(&path)?;
+    parser(&input)
 }
 
 // Finds a specific benchmark by name, fails if it is missing

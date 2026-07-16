@@ -1,9 +1,7 @@
-use crate::cli;
 use crate::units;
 use crate::errors::SlugError;
 use crate::lib_parsers::*;
 
-use std::io::{Read};
 use std::collections::HashMap;
 use std::cmp::Ordering;
 
@@ -193,15 +191,4 @@ pub fn resolve(lib: &Lib) -> Result<ParserFn, SlugError> {
                 lib.name, wanted.major, wanted.minor, wanted.patch)))
         }
     }
-}
-
-pub fn parse(reader: cli::PerfDataReader, parser: ParserFn) -> Result<Vec<PerfData>, SlugError> {
-    let mut s = String::new();
-
-    match reader { // TODO: move this to cli
-        cli::PerfDataReader::Stdin(mut r) => r.read_to_string(&mut s)?,
-        cli::PerfDataReader::File(mut r) => r.read_to_string(&mut s)?,
-    };
-
-    parser(&s)
 }

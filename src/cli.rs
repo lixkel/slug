@@ -1,6 +1,6 @@
 extern crate getopts;
 
-use std::io::{self, IsTerminal};
+use std::io::{self, IsTerminal, Read};
 use std::fs::File;
 use getopts::Options;
 use std::env;
@@ -15,11 +15,6 @@ pub struct CliOptions {
     pub write: bool,
     pub subcommand: Option<String>,
     pub target: Option<String>,
-}
-
-pub enum PerfDataReader {
-    Stdin(io::Stdin),
-    File(File),
 }
 
 fn print_usage(program: &str, opts: Options) {
@@ -95,20 +90,24 @@ pub fn parse_args() -> Result<CliOptions, SlugError> {
 }
 
 
-pub fn get_reader(file: &Option<String>) -> Result<PerfDataReader, SlugError> {
+pub fn read_input(file: &Option<String>) -> Result<String, SlugError> {
+    let mut s = String::new();
+
     match &file {
         Some(file_name) => {
             // Bare io error does not say which path failed
-            let file = File::open(file_name)
+            let mut file = File::open(file_name)
                 .map_err(|e| SlugError::cli(format!("Cannot open '{}': {}", file_name, e)))?;
-            Ok(PerfDataReader::File(file))
+            file.read_to_string(&mut s)
+                .map_err(|e| SlugError::cli(format!("Cannot read '{}': {}", file_name, e)))?;
         },
         None => {
-            // Warn interactive users who probably forgot -f, stay quiet when piped
             if io::stdin().is_terminal() {
                 terms::warn("No -f given, reading benchmark output from stdin (Ctrl-D to end)");
             }
-            Ok(PerfDataReader::Stdin(io::stdin()))
+            io::stdin().read_to_string(&mut s)?;
         }
-    }
+    };
+
+    Ok(s)
 }

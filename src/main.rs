@@ -59,9 +59,9 @@ fn run() -> Result<Option<String>, SlugError> {
     // Resolve -t before opening input, an unknown library must not block on stdin
     let parser = parser::resolve(&lib)?;
 
-    let reader = cli::get_reader(&options.file)?;
+    let input = cli::read_input(&options.file)?;
 
-    let mut data = parser::parse(reader, parser)?;
+    let mut data = parser(&input)?;
 
     if data.is_empty() {
         return Err(SlugError::parsing(format!("No benchmarks found in input\nhelp: is -t {} the library that produced this output?", lib_str)));
