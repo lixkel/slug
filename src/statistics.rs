@@ -133,45 +133,6 @@ pub fn combine(verdicts: &[CheckVerdict], policy: Policy) -> bool {
     }
 }
 
-// Did the prediction-bound check flag last run commits in row, nothing stored
-pub fn prediction_bound_run(history: &[PerfData], config: &Config) -> Result<Option<String>, SlugError> {
-    let k = config.prediction_bound.run;
-
-    if k < 2 || !config.check_is_on("prediction-bound") {
-        return Ok(None);
-    }
-    if history.len() < k {
-        return Ok(None);
-    }
-
-    // Walk down from newest commit
-    let mut end = history.len();
-    for _ in 0..k {
-        if !prediction_bound_flagged(&history[..end], config)? {
-            return Ok(None);
-        }
-        end -= 1;
-    }
-
-    Ok(Some(format!("prediction-bound check flagged the last {} commits in a row", k)))
-}
-
-fn prediction_bound_flagged(history: &[PerfData], config: &Config) -> Result<bool, SlugError> {
-    let slice = tail(history, config.prediction_bound.window);
-
-    if slice.len() < config.min_samples {
-        return Ok(false);
-    }
-    if !slice.last().unwrap().map.contains_key("mean") {
-        return Ok(false);
-    }
-
-    match evaluate_prediction_bound(slice, config)? {
-        CheckVerdict::Judged(report) => Ok(report.flagged),
-        _ => Ok(false),
-    }
-}
-
 // Newest measurement of a metric plus the historical distribution it is judged against
 struct Sample {
     current: f64,

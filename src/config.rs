@@ -29,16 +29,16 @@ pub struct Config {
 #[derive(Debug, Default, Deserialize, Clone, Copy, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Policy {
-    Any,
     #[default]
+    Any,
     All,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Config {
-            enabled: vec!["zscore".to_string(), "prediction-bound".to_string()],
-            policy: Policy::All,
+            enabled: vec!["prediction-bound".to_string()],
+            policy: Policy::Any,
             min_samples: 10,
             zscore: Zscore::default(),
             prediction_bound: PredictionBound::default(),
@@ -57,13 +57,10 @@ pub struct Zscore {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct PredictionBound {
-    // flag a new measurement above 95% (level = 0.95) of other measurements
-    // higher level = fewer false alarms
+    // flag a new measurement above this share (level) of healthy measurements
+    // false alarm rate is one minus level: at 0.999, one healthy commit in 1000
     pub level: f64,
     pub window: usize,
-    // fail when check flags this many commits in a row, regardless of policy
-    // catches slow drifts that policy misses (0 = off)
-    pub run: usize,
 }
 
 impl Default for Zscore {
@@ -74,7 +71,7 @@ impl Default for Zscore {
 
 impl Default for PredictionBound {
     fn default() -> Self {
-        PredictionBound { level: 0.95, window: 100, run: 2 }
+        PredictionBound { level: 0.999, window: 100 }
     }
 }
 
@@ -126,10 +123,6 @@ impl Config {
             return Err(SlugError::config("prediction-bound level must be between 0 and 1"));
         }
 
-        if self.prediction_bound.run == 1 {
-            return Err(SlugError::config("prediction-bound run must be 0 (off) or at least 2"));
-        }
-
         Ok(())
     }
 }
@@ -165,28 +158,25 @@ const EXAMPLE_CONFIG: &str = "\
 # Slug configuration
 
 # Which checks to run, and how to combine their verdicts.
-enabled = [\"zscore\", \"prediction-bound\"]
+enabled = [\"prediction-bound\"]
 # any = flag if ANY of enabled checks flag
 # all = flag only if ALL checks flag
-policy = \"all\"
+policy = \"any\"
 
 # no check judges until its window has this many points
 min_samples = 10
 
+[prediction-bound]
+# flag new measurement above this share (level) of healthy measurements
+# false alarm rate at 0.999, one healthy commit in 1000
+level = 0.999
+window = 100
+
+# The z-score check is also available; add \"zscore\" to enabled to use it.
 [zscore]
 # flag when value is this many standard deviations above the mean
 threshold = 3.0
-# how many recent points to evaluate against
 window = 100
-
-[prediction-bound]
-# flag a new measurement above 95% (level = 0.95) of other measurements
-# higher level = fewer false alarms
-level = 0.95
-window = 100
-# fail when check flags this many commits in a row, regardless of policy
-# catches slow drifts that policy misses (0 = off)
-run = 2
 ";
 
 // Write the example config to the repository root

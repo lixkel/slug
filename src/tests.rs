@@ -9,7 +9,7 @@ use crate::cli;
 use crate::config::{Config, Policy};
 use crate::errors::SlugError;
 use crate::parser::{self, Lib, PerfData, Version};
-use crate::statistics::{combine, prediction_bound_run, evaluate_prediction_bound, evaluate_zscore, run_checks, CheckReport, CheckVerdict};
+use crate::statistics::{combine, evaluate_prediction_bound, evaluate_zscore, run_checks, CheckReport, CheckVerdict};
 use crate::units;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -353,13 +353,13 @@ fn reference_history(newest: f64) -> Vec<PerfData> {
 
 #[test]
 fn prediction_bound_matches_pseudo_oracle() {
-    // upper bound = 100 + t(0.95, 9) * 2 * sqrt(1 + 1/10) = 103.8451701269
-    // where t(0.95, 9) = 1.8331129327 (scipy.stats.t.ppf(0.95, 9))
+    // upper bound = 100 + t(0.999, 9) * 2 * sqrt(1 + 1/10) = 109.0130555959
+    // where t(0.999, 9) = 4.2968056627 (scipy.stats.t.ppf(0.999, 9))
     let report = judged(evaluate_prediction_bound(&reference_history(110.0), &Config::default()));
-    assert!(close(report.threshold, 103.8451701269));
+    assert!(close(report.threshold, 109.0130555959));
     assert!(report.flagged); // 110 is above bound
 
-    let report = judged(evaluate_prediction_bound(&reference_history(103.844), &Config::default()));
+    let report = judged(evaluate_prediction_bound(&reference_history(109.012), &Config::default()));
     assert!(!report.flagged); // just under bound
 }
 
@@ -416,14 +416,23 @@ fn healthy_stream() -> Vec<f64> {
 
 #[test]
 fn prediction_bound_false_alarm_rate_matches_level() {
-    // Prediction-bound false alarm rate is 5% at 0.95
     let stream = healthy_stream();
 
+    // Default level 0.999: about one healthy point in 1000 (0.1%)
     let (flagged, judged) = flags_on_stream(&stream, &config_with(&["prediction-bound"]));
+    let rate = flagged as f64 / judged as f64;
+    println!("prediction_bound 0.999 false alarm rate: {:.4}", rate);
+    assert!(rate < 0.004, "rate {} not under 0.4%", rate);
+
+    // 5% at 0.95
+    let mut strict = config_with(&["prediction-bound"]);
+    strict.prediction_bound.level = 0.95;
+    let (flagged, judged) = flags_on_stream(&stream, &strict);
     let rate = flagged as f64 / judged as f64;
     println!("prediction_bound 0.95 false alarm rate: {:.4}", rate);
     assert!(rate > 0.035 && rate < 0.065, "rate {} outside [3.5%, 6.5%]", rate);
 
+    // 10% at 0.90
     let mut lenient = config_with(&["prediction-bound"]);
     lenient.prediction_bound.level = 0.90;
     let (flagged, judged) = flags_on_stream(&stream, &lenient);
@@ -447,21 +456,21 @@ fn step_baseline() -> Vec<f64> {
 }
 
 #[test]
-fn mean_shift_size_determines_which_checks_flag() {
-    // Prediction-bound is the more sensitive of the two point checks
+fn mean_shift_size_determines_whether_checks_flag() {
+    // Both point checks sit near three standard deviations, about +9% on this baseline
     let flags = |step_pct: f64, enabled: &[&str]| {
         let mut values = step_baseline();
         values.push(100.0 * (1.0 + step_pct / 100.0));
         gate(&series(&values), &config_with(enabled))
     };
 
-    // +6% (two standard deviations): prediction-bound flags, z-score does not
-    assert!(flags(6.0, &["prediction-bound"]));
+    // +6% (two standard deviations): neither check flags
+    assert!(!flags(6.0, &["prediction-bound"]));
     assert!(!flags(6.0, &["zscore"]));
 
-    // +10%: z-score joins in
-    assert!(flags(10.0, &["prediction-bound"]));
-    assert!(flags(10.0, &["zscore"]));
+    // +12%: both flag
+    assert!(flags(12.0, &["prediction-bound"]));
+    assert!(flags(12.0, &["zscore"]));
 
     // +50%: large enough for both = trip policy all
     assert!(flags(50.0, &["prediction-bound"]));
@@ -474,24 +483,6 @@ fn mean_shift_size_determines_which_checks_flag() {
 }
 
 #[test]
-fn gradual_drift_caught_by_prediction_bound_not_zscore() {
-    // Drift of +1% per commit
-    // z-score - flags early then its baseline inflates
-    // prediction-bound - keeps flagging
-    let mut values = step_baseline();
-    for k in 1..=60 {
-        values.push(100.0 + k as f64 + if k % 2 == 0 { 3.0 } else { -3.0 });
-    }
-
-    let (prediction_bound, _) = flags_on_stream(&values, &config_with(&["prediction-bound"]));
-    let (zscore, _) = flags_on_stream(&values, &config_with(&["zscore"]));
-    println!("drift flags: prediction_bound={} zscore={}", prediction_bound, zscore);
-
-    assert!(zscore < 15, "zscore flagged {} times", zscore);
-    assert!(prediction_bound > 40, "prediction_bound flagged only {} times", prediction_bound);
-}
-
-#[test]
 fn improvement_never_flags() {
     // Running faster is not regression
     let mut config = config_with(&ALL_CHECKS);
@@ -499,36 +490,17 @@ fn improvement_never_flags() {
     assert!(!gate(&history_with(30.0), &config));
 }
 
-#[test]
-fn detection_after_mean_shift_differs_per_check() {
-    // Thirty points at +10% per level
-    // z-score - flags on arrival then goes silent
-    // prediction-bound - keeps flagging while window remembers healthy level
-    let mut values = step_baseline();
-    for i in 0..30 {
-        values.push(110.0 + if i % 2 == 0 { 3.0 } else { -3.0 });
-    }
-
-    // The baseline never flags, so every count comes from after the shift
-    let (prediction_bound, _) = flags_on_stream(&values, &config_with(&["prediction-bound"]));
-    let (zscore, _) = flags_on_stream(&values, &config_with(&["zscore"]));
-    println!("after +10% shift: prediction_bound={} zscore={}", prediction_bound, zscore);
-
-    assert!(zscore >= 1, "z-score must flag the arrival");
-    assert!(prediction_bound > zscore, "prediction_bound must keep flagging after the z-score silences");
-}
-
 // Statistical check selection and verdict combination
 
 #[test]
 fn policy_decides() {
-    // 102.5: zscore passes, prediction-bound flags, policy decides end result
+    // 103.2: prediction-bound passes, zscore flags, policy decides end result
     let mut config = config_with(&["zscore", "prediction-bound"]);
     config.policy = Policy::Any;
-    assert!(gate(&history_with(102.5), &config));
+    assert!(gate(&history_with(103.2), &config));
 
     config.policy = Policy::All;
-    assert!(!gate(&history_with(102.5), &config));
+    assert!(!gate(&history_with(103.2), &config));
 }
 
 #[test]
@@ -549,61 +521,6 @@ fn config_window_limits_history() {
     assert!(!gate(&history, &config));
 }
 
-// Run rule
-
-// Baseline with n newest commits at value
-fn streak(n: usize, value: f64) -> Vec<PerfData> {
-    let mut values = step_baseline();
-    values.extend(vec![value; n]);
-    series(&values)
-}
-
-#[test]
-fn run_rule_fires_after_n_consecutive_flags() {
-    let history = streak(2, 120.0);
-    let config = config_with(&["prediction-bound"]);
-
-    let reason = prediction_bound_run(&history, &config).unwrap();
-    assert_eq!(reason.unwrap(), "prediction-bound check flagged the last 2 commits in a row");
-}
-
-#[test]
-fn run_rule_ignores_isolated_flag() {
-    // We need at least two consecutive flags
-    let history = streak(1, 120.0);
-    let config = config_with(&["prediction-bound"]);
-
-    let reason = prediction_bound_run(&history, &config).unwrap();
-    assert!(reason.is_none());
-}
-
-#[test]
-fn run_rule_disarmed_by_config() {
-    // run = 0 turns the rule off
-    let history = streak(2, 120.0);
-
-    let mut config = config_with(&["prediction-bound"]);
-    config.prediction_bound.run = 0;
-    let reason = prediction_bound_run(&history, &config).unwrap();
-    assert!(reason.is_none());
-
-    let config = config_with(&[]);
-    let reason = prediction_bound_run(&history, &config).unwrap();
-    assert!(reason.is_none());
-}
-
-#[test]
-fn run_rule_streak_needs_warmed_up_prefixes() {
-    // Ten points, older prefix has nine, below min_samples = broken streak
-    let mut values = vec![100.0; 8];
-    values.extend([120.0, 120.0]);
-    let history = series(&values);
-    let config = config_with(&["prediction-bound"]);
-
-    let reason = prediction_bound_run(&history, &config).unwrap();
-    assert!(reason.is_none());
-}
-
 // Configuration file parsing
 
 #[test]
@@ -613,7 +530,7 @@ fn partial_config_defaults() {
     assert_eq!(config.prediction_bound.level, 0.99);
     assert_eq!(config.prediction_bound.window, 100); // untouched default
     assert_eq!(config.zscore.threshold, 3.0);
-    assert!(config.enabled.iter().any(|name| name == "zscore"));
+    assert!(config.enabled.iter().any(|name| name == "prediction-bound"));
 }
 
 #[test]
