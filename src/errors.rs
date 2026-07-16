@@ -55,6 +55,11 @@ impl error::Error for SlugError {
 
 impl From<git2::Error> for SlugError {
     fn from(err: git2::Error) -> Self {
+        // Empty repo
+        if err.code() == git2::ErrorCode::UnbornBranch {
+            return SlugError::git(
+                "repository has no commits yet\nhelp: slug records are attached to a commit, create one first");
+        }
         SlugError::Git(err)
     }
 }
