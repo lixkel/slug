@@ -218,10 +218,10 @@ pub fn evaluate_prediction_bound(history: &[PerfData], config: &Config) -> Resul
     if s.current > upper_bound {
         // How far the new measurement overshoots the recent average
         let above_pct = (s.current / s.mean - 1.0) * 100.0;
-        let text = format!("{}, {:+.1}% above the recent average, {:.0}% bound {}", current, above_pct, level_pct, bound);
+        let text = format!("{}, {:+.1}% above the recent average, {:.1}% bound {}", current, above_pct, level_pct, bound);
         Ok(CheckVerdict::flagged("prediction-bound", s.current, upper_bound, text))
     } else {
-        let text = format!("{} within {:.0}% bound {}", current, level_pct, bound);
+        let text = format!("{} within {:.1}% bound {}", current, level_pct, bound);
         Ok(CheckVerdict::passed("prediction-bound", s.current, upper_bound, text))
     }
 }
