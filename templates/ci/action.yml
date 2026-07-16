@@ -26,6 +26,12 @@ runs:
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
         
+        # A shallow checkout hides the history slug checks judges against
+        if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+          echo "::error::Shallow checkout, Slug needs the full history, set fetch-depth: 0 on actions/checkout"
+          exit 1
+        fi
+
         echo "Fetching existing slug data..."
         # Measurements live in git notes, which are not fetched by default
         git fetch origin "+refs/notes/slug-shared:refs/notes/slug-shared" || echo "No pre-existing notes found."
