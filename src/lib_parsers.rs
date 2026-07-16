@@ -151,7 +151,7 @@ pub fn google_benchmark_1_8_3(s: &str) -> Result<Vec<PerfData>, SlugError> {
     //  BM_Fib          12194 ns        12150 ns        55767
     // columns are name, Time, CPU, Iterations
     let regex = Regex::new(
-        r"(?m)^(?P<name>\S+)\s+(?P<time>[\d.]+)\s+(?P<tunit>\w+)\s+(?P<cpu>[\d.]+)\s+(?P<cunit>\w+)\s+\d+\s*$"
+        r"(?m)^(?P<name>\S.*?)\s+(?P<time>[\d.]+)\s+(?P<tunit>\w+)\s+(?P<cpu>[\d.]+)\s+(?P<cunit>\w+)\s+\d+\s*$"
     )?;
 
     parse_rows(s, &regex, &[

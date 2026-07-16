@@ -213,11 +213,16 @@ fn google_benchmark_1_8_3() {
     let data = parse_fixture("google-benchmark@1.8.3", "google-benchmark.txt").unwrap();
 
     let fib = find_benchmark(&data, "BM_Fib");
-    assert!(close(fib.map["mean"], 12_194.0));
-    assert!(close(fib.map["cpu"], 12_150.0));
+    assert!(close(fib.map["mean"], 9_565.0));
+    assert!(close(fib.map["cpu"], 9_562.0));
 
     let sort = find_benchmark(&data, "BM_Sort");
-    assert!(close(sort.map["mean"], 1_710.0));
+    assert!(close(sort.map["mean"], 1_642.0));
+
+    // Template function
+    let sort_t = find_benchmark(&data, "BM_SortT<std::vector<int>, 500>");
+    assert!(close(sort_t.map["mean"], 1_713.0));
+    assert!(close(sort_t.map["cpu"], 1_713.0));
 }
 
 #[test]
