@@ -6,7 +6,7 @@ inputs:
     description: "Path to the benchmark output file"
     required: true
   type:
-    description: "Parser type (pytest-benchmark@4.0.0, pyperf@2.7.0, ...)"
+    description: "Parser type, name@version or bare name for the newest parser (pytest@7.3.0, pyperf, ...)"
     required: true
   github_token:
     description: "GitHub token for saving performance test data to your repository"
@@ -27,21 +27,21 @@ runs:
         git config user.email "github-actions[bot]@users.noreply.github.com"
         
         echo "Fetching existing slug data..."
-        # Slug keys each branch by its tip's source commit (refs/slug/<sha>), so we need to fetch
-        # the whole namespace plus the shared notes index that maps commits to records
-        git fetch origin "+refs/slug/*:refs/slug/*" || echo "No pre-existing slug data."
+        # Measurements live in git notes, which are not fetched by default
         git fetch origin "+refs/notes/slug-shared:refs/notes/slug-shared" || echo "No pre-existing notes found."
 
     - name: "Setup Slug"
       shell: "bash"
-      # TODO: add downloading of releases
       run: |
         if [ -n "${{ inputs.slug_binary_path }}" ] && [ -f "${{ inputs.slug_binary_path }}" ]; then
            echo "Using provided binary ${{ inputs.slug_binary_path }}"
            echo "SLUG_BIN=${{ inputs.slug_binary_path }}" >> $GITHUB_ENV
+        elif curl -fsSL https://github.com/lixkel/slug/releases/latest/download/slug-x86_64-unknown-linux-musl.tar.gz | tar -xz -C /tmp; then
+           echo "Using prebuilt binary from the latest release"
+           echo "SLUG_BIN=/tmp/slug" >> $GITHUB_ENV
         else
-           echo "No binary provided. Building from source ..."
-           git clone https://gitlab.mff.cuni.cz/teaching/nprg045/horky/mojikm/implementation.git /tmp/slug_source
+           echo "No release to download. Building from source ..."
+           git clone https://github.com/lixkel/slug.git /tmp/slug_source
            cd /tmp/slug_source
            cargo build --release
            echo "SLUG_BIN=/tmp/slug_source/target/release/slug" >> $GITHUB_ENV
@@ -68,7 +68,27 @@ runs:
       shell: "bash"
       # !cancelled() bypasses implicit success() so we still push saved data after regression (exit = 2)
       if: ${{ !cancelled() && github.event_name == 'push' && (env.SLUG_EXIT == '0' || env.SLUG_EXIT == '2') }}
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        REPO_URL: ${{ github.server_url }}/${{ github.repository }}
       run: |
-        echo "Pushing slug data and git notes back to repository..."
-        git push origin "refs/slug/*" || echo "Nothing to push"
-        git push origin refs/notes/slug-shared || echo "No notes to push"
+        set -euo pipefail
+        echo "Pushing git notes back to repository..."
+
+        # Concurrent run can move refs/notes/slug-shared between our fetch and push
+        # Normal push is then rejected and the measurement is lost
+        AUTH_URL="${REPO_URL/https:\/\//https:\/\/x-access-token:${GH_TOKEN}@}"
+        for attempt in 1 2 3 4 5; do
+          if git push "$AUTH_URL" refs/notes/slug-shared; then
+            echo "Slug data pushed."
+            exit 0
+          fi
+          echo "Push rejected (attempt $attempt), merging concurrent Slug data..."
+          git fetch "$AUTH_URL" "+refs/notes/slug-shared:refs/notes/slug-remote"
+          # Notes for distinct commits merge cleanly, on re-run keep our measurement
+          git notes --ref=slug-shared merge -s ours refs/notes/slug-remote
+          sleep "$attempt"
+        done
+
+        echo "::error::Could not push Slug data after 5 attempts: this run's measurement was not recorded."
+        exit 1
