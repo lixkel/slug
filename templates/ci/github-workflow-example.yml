@@ -17,7 +17,7 @@ jobs:
   benchmark:
     runs-on: "ubuntu-latest"
     permissions:
-      contents: "write" # Allows Slug to push its data refs (refs/slug/*) back
+      contents: "write" # Allows Slug to push its notes (refs/notes/slug-shared) back
 
     steps:
       - name: "Checkout repository"
@@ -53,5 +53,6 @@ jobs:
         with:
           file: "benchmark_output.txt"
           type: "pyperf@2.7.0"
-          # Optional: Path to Slug binary can be provided, otherwise Slug is built from source
+          # Optional: Path to Slug binary can be provided, otherwise the latest
+          # release is downloaded (built from source when no release exists)
           # slug_binary_path: "/path/to/slug"
